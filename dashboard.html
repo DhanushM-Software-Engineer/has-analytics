@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Schnell Debugging Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="dashboard_data.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#07090e;--surface:#0c1018;--surface2:#121b27;--card:#182234;--border:#1d2d40;--border2:#253c54;--text:#dce8f8;--muted:#5a7090;--blue:#3d82f0;--green:#1fa355;--red:#e04545;--yellow:#d4961f;--purple:#7a5dcf}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 28px;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:15px;font-weight:600;color:#e8edf5;letter-spacing:-.3px}
+.header .meta{color:var(--muted);font-size:12px}
+.main{padding:28px;max-width:1440px;margin:0 auto}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.kpi:hover{border-color:var(--blue);box-shadow:0 2px 12px rgba(61,130,240,.07)}
+.kpi .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+.kpi .value{font-size:26px;font-weight:700;color:#e8edf5}
+.kpi .sub{font-size:10px;color:var(--muted);margin-top:4px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px}
+.panel h3{font-size:12px;font-weight:600;color:#e8edf5;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.chart-box{position:relative;height:220px}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;padding:7px 8px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:.3px}
+td{padding:7px 8px;border-bottom:1px solid var(--border)}
+tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
+.hub-grid-card{background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:18px 20px;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s}
+.hub-grid-card:hover{border-color:var(--blue);box-shadow:0 6px 24px rgba(0,0,0,.35);transform:translateY(-2px)}
+.hub-grid-card .hgc-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.hub-grid-card .hgc-name{font-size:13px;font-weight:700;color:#e8edf5;letter-spacing:.4px;display:flex;align-items:center;gap:8px}
+.hub-grid-card .hgc-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;box-shadow:0 0 6px currentColor}
+.hub-grid-card .hgc-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+.hub-grid-card .hgc-metric{padding:0 14px;border-right:1px solid var(--border);text-align:center}
+.hub-grid-card .hgc-metric:first-child{padding-left:0;text-align:left}
+.hub-grid-card .hgc-metric:last-child{border-right:none;text-align:right}
+.hub-grid-card .hgc-m-label{font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:6px}
+.hub-grid-card .hgc-m-value{font-size:22px;font-weight:700;line-height:1}
+.hub-grid-card .hgc-m-sub{font-size:9px;color:var(--muted);margin-top:4px}
+.hub-grid-card .hgc-footer{margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-size:10px;color:var(--blue);text-align:right;opacity:.8}
+.hub-fleet-section{background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:20px}
+.hub-fleet-bar{position:sticky;top:0;background:var(--surface2);border-bottom:1px solid var(--border2);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;z-index:10}
+.hub-fleet-body{padding:18px 20px;background:var(--bg);max-height:560px;overflow-y:auto}
+.hub-search-wrap{position:relative;display:inline-flex;align-items:center}
+.hub-search-wrap svg{position:absolute;left:10px;pointer-events:none;color:var(--muted)}
+.hub-search-input{background:var(--surface);border:1px solid var(--border2);color:var(--text);padding:8px 12px 8px 32px;border-radius:6px;font-size:12px;font-family:'Inter',system-ui,sans-serif;width:220px;outline:none;transition:border-color .15s}
+.hub-search-input:focus{border-color:var(--blue)}
+.hub-search-input::placeholder{color:var(--muted)}
+.hub-empty-state{text-align:center;padding:40px 20px;color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px}
+.tab{padding:8px 18px;cursor:pointer;color:var(--muted);font-size:12px;font-weight:500;border-bottom:2px solid transparent;transition:color .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.btn{background:var(--surface2);border:1px solid var(--border2);color:var(--text);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:11px;font-family:'Inter',system-ui,sans-serif;transition:border-color .15s}
+.btn:hover{border-color:var(--blue);color:#e8edf5}
+.tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:500;cursor:pointer}
+.tag-green{background:rgba(78,144,104,.14);color:var(--green)}.tag-red{background:rgba(184,92,82,.14);color:var(--red)}.tag-yellow{background:rgba(184,146,46,.14);color:var(--yellow)}
+.heatmap-grid{display:grid;grid-template-columns:50px repeat(24,1fr);gap:1px;font-size:9px}
+.heatmap-cell{padding:4px 1px;text-align:center;border-radius:2px;cursor:pointer;position:relative}
+.heatmap-label{color:var(--muted);padding:4px 1px;text-align:right;font-size:9px}
+.formula-ref{font-size:9px;color:var(--muted);font-style:italic;margin-top:3px}
+.speed-segment{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.speed-segment:hover{background:var(--surface2);border-radius:4px}
+.seg-name{flex:1;font-size:11px}.seg-bar{flex:2;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.seg-fill{height:100%;border-radius:3px}.seg-val{font-size:16px;font-weight:600;color:#e8edf5;min-width:70px;text-align:right}
+.seg-unit{font-size:10px;color:var(--muted);min-width:25px}
+/* Modal */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:1000;justify-content:center;align-items:flex-start;padding:40px 20px;overflow-y:auto}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;max-width:900px;width:100%;max-height:85vh;overflow-y:auto;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.modal h2{font-size:14px;font-weight:600;color:#e8edf5;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center}
+.modal .close{cursor:pointer;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:4px}
+.modal .close:hover{background:var(--border);color:#e8edf5}
+.fleet-table{margin-bottom:20px}
+.fleet-table td,.fleet-table th{padding:8px 12px}
+.fleet-table .hub-name{cursor:pointer;color:var(--blue)}.fleet-table .hub-name:hover{text-decoration:underline}
+#detailView{display:none}
+.tooltip-box{position:absolute;background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:8px 10px;font-size:10px;z-index:100;pointer-events:none;min-width:140px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.y-label{font-size:10px;color:var(--muted);writing-mode:vertical-lr;transform:rotate(180deg);margin-right:4px}
+.scroll-table{max-height:260px;overflow-y:auto}
+.scroll-table table{position:relative}.scroll-table thead{position:sticky;top:0;background:var(--surface2);z-index:1}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+/* ── Nav ── */
+.nav-bar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;padding:0 28px}
+.nav-item{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:12px;font-weight:500;padding:10px 16px;transition:color .15s}
+.nav-item:hover{color:var(--text)}
+.nav-item.active{border-bottom-color:var(--blue);color:var(--blue)}
+/* ── Log Center ── */
+.lc-header{background:var(--surface2);border-bottom:1px solid var(--border);padding:18px 28px}
+.lc-title{font-size:16px;font-weight:700;color:#e8edf5;letter-spacing:-.3px}
+.lc-subtitle{font-size:11px;color:var(--muted);margin-top:2px}
+.lc-hub-pills{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.lc-hub-pill{background:var(--surface);border:1px solid var(--border);border-radius:20px;color:var(--muted);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:500;padding:4px 12px;transition:all .15s}
+.lc-hub-pill:hover{border-color:var(--blue);color:var(--text)}
+.lc-hub-pill.active{background:rgba(61,130,240,.12);border-color:var(--blue);color:var(--blue)}
+.lc-tabs-row{display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:12px;flex-wrap:wrap}
+.lc-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.lc-tab{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:500;padding:6px 14px;transition:all .15s}
+.lc-tab:hover{border-color:var(--muted);color:var(--text)}
+.lc-tab.active{background:rgba(61,130,240,.1);border-color:var(--blue);color:var(--blue)}
+.lc-tab.tab-fail.active{background:rgba(184,92,82,.1);border-color:var(--red);color:var(--red)}
+.lc-tab.tab-slow.active{background:rgba(184,146,46,.1);border-color:var(--yellow);color:var(--yellow)}
+.lc-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lc-filter-select{background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:11px;padding:6px 10px;outline:none}
+.lc-filter-input{background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:11px;padding:6px 10px;outline:none;width:200px;transition:border-color .15s}
+.lc-filter-input:focus,.lc-filter-select:focus{border-color:var(--blue)}
+.lc-filter-input::placeholder{color:var(--muted)}
+.lc-filter-clear{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:11px;padding:6px 10px;transition:all .15s}
+.lc-filter-clear:hover{border-color:var(--red);color:var(--red)}
+.lc-context-banner{background:rgba(61,130,240,.07);border:1px solid rgba(61,130,240,.2);border-radius:6px;margin-bottom:14px;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.lc-context-label{font-size:12px;color:var(--blue);font-weight:600}
+.lc-context-desc{font-size:11px;color:var(--muted);margin-top:2px}
+.lc-context-clear{background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:10px;padding:4px 10px;white-space:nowrap;transition:all .15s;flex-shrink:0}
+.lc-context-clear:hover{border-color:var(--muted);color:var(--text)}
+.lc-summary-row{display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:11px;color:var(--muted)}
+.lc-cnt{color:#e8edf5;font-weight:600}
+.lc-cnt-r{color:var(--red);font-weight:600}
+.lc-cnt-y{color:var(--yellow);font-weight:600}
+.lc-table{width:100%;border-collapse:collapse}
+.lc-table th{background:var(--surface2);border-bottom:1px solid var(--border2);color:var(--muted);font-size:10px;font-weight:500;letter-spacing:.4px;padding:9px 10px;text-align:left;text-transform:uppercase;position:sticky;top:0;z-index:5}
+.lc-table td{border-bottom:1px solid var(--border);padding:8px 10px;vertical-align:middle}
+.lc-row{cursor:pointer;transition:background .1s}
+.lc-row-fail{background:rgba(184,92,82,.04)}
+.lc-row-fail:hover{background:rgba(184,92,82,.09)!important}
+.lc-row-slow{background:rgba(184,146,46,.04)}
+.lc-row-slow:hover{background:rgba(184,146,46,.09)!important}
+.lc-row-ok:hover{background:var(--surface2)!important}
+.lc-row.lc-expanded{background:var(--surface2)!important;border-bottom:none}
+.lc-expand-row td{padding:0;border-bottom:2px solid var(--border2)!important}
+/* Timing pipeline */
+.timing-pipeline-wrap{padding:16px 20px;background:var(--bg);border-top:1px solid var(--border)}
+.tp-title{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:14px;font-weight:500}
+.timing-pipeline{display:flex;align-items:center;overflow-x:auto;padding-bottom:6px;min-height:72px}
+.tp-node{text-align:center;min-width:82px;flex-shrink:0}
+.tp-node-dot{width:10px;height:10px;border-radius:50%;margin:0 auto 6px}
+.tp-node-dot.tp-ok{background:var(--green);box-shadow:0 0 6px var(--green)}
+.tp-node-dot.tp-warn{background:var(--yellow);box-shadow:0 0 6px var(--yellow)}
+.tp-node-dot.tp-slow{background:var(--red);box-shadow:0 0 6px var(--red)}
+.tp-node-label{font-size:9px;color:var(--muted);line-height:1.4;white-space:nowrap}
+.tp-seg{flex:1;text-align:center;padding:0 4px;min-width:70px}
+.tp-seg-ms{font-size:13px;font-weight:700;margin-bottom:4px}
+.tp-seg-ms.tp-ok{color:var(--green)}.tp-seg-ms.tp-warn{color:var(--yellow)}.tp-seg-ms.tp-slow{color:var(--red)}
+.tp-seg-line{height:2px;border-radius:1px;margin:4px 0}
+.tp-seg-line.tp-ok{background:var(--green)}.tp-seg-line.tp-warn{background:var(--yellow)}.tp-seg-line.tp-slow{background:var(--red)}
+.tp-seg-label{font-size:9px;color:var(--muted)}
+.tp-fail-banner{background:rgba(184,92,82,.08);border:1px solid rgba(184,92,82,.2);border-radius:6px;padding:12px 16px;margin-bottom:12px}
+.tp-fail-reason{font-size:13px;font-weight:700;color:var(--red);margin-bottom:4px}
+.tp-fail-meta{font-size:11px;color:var(--muted)}
+.tp-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.tp-field{background:var(--surface);border-radius:4px;border:1px solid var(--border);padding:8px 10px}
+.tp-field-label{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:3px}
+.tp-field-val{font-size:11px;color:#e8edf5;font-weight:500}
+/* investigate btn */
+.investigate-btn{background:rgba(184,92,82,.08);border:1px solid rgba(184,92,82,.2);border-radius:4px;color:var(--red);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:10px;font-weight:500;padding:4px 10px;transition:all .15s;white-space:nowrap}
+.investigate-btn:hover{background:rgba(184,92,82,.18);border-color:var(--red)}
+/* modal debug enhancements */
+.dbg-section{margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
+.dbg-section-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.dbg-section-title{font-size:11px;font-weight:600;color:#e8edf5}
+.dbg-lc-link{background:rgba(61,130,240,.08);border:1px solid rgba(61,130,240,.2);border-radius:4px;color:var(--blue);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:10px;font-weight:500;padding:4px 10px;transition:all .15s}
+.dbg-lc-link:hover{background:rgba(61,130,240,.18)}
+.dbg-empty{color:var(--muted);font-size:11px;font-style:italic;padding:6px 0}
+.modal-cta{display:flex;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
+.modal-cta-btn{background:rgba(61,130,240,.08);border:1px solid rgba(61,130,240,.2);border-radius:6px;color:var(--blue);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:500;padding:8px 16px;transition:all .15s}
+.modal-cta-btn:hover{background:rgba(61,130,240,.18)}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>Schnell Fleet Debugging Dashboard</h1>
+<div class="meta">Engineering · 30-day window · <span id="hubCount"></span> hubs monitored</div>
+</div>
+<div class="nav-bar" id="navBar">
+<button class="nav-item active" id="navFleet" onclick="showLanding()">Fleet Overview</button>
+<button class="nav-item" id="navLogs" onclick="openLogCenter({})">Log Center</button>
+</div>
+<div class="main">
+<!-- LANDING -->
+<div id="landingView">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+<div><h2 style="font-size:17px;color:#e8edf5;font-weight:700;letter-spacing:-.3px">Fleet Overview</h2><p style="color:var(--muted);font-size:11px;margin-top:4px">Real-time system health · Click any hub to drill down</p></div>
+<div id="fleetStatusBadge" style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:500"></div>
+</div>
+<div class="kpi-row" id="fleetKPIs"></div>
+<div class="hub-fleet-section">
+<div class="hub-fleet-bar">
+<div>
+<div style="font-size:13px;font-weight:600;color:#e8edf5">Hub Fleet</div>
+<div style="font-size:11px;color:var(--muted);margin-top:2px">Select a hub to view detailed analytics</div>
+</div>
+<div class="hub-search-wrap">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+<input id="hubSearch" class="hub-search-input" type="text" placeholder="Search hubs…" oninput="filterHubs(this.value)" autocomplete="off">
+</div>
+</div>
+<div class="hub-fleet-body">
+<div id="hubCardsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px"></div>
+<div id="hubSearchEmpty" class="hub-empty-state" style="display:none">No hubs match your search.</div>
+</div>
+</div>
+</div>
+<!-- DETAIL -->
+<div id="detailView">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+<h2 style="font-size:15px;color:#e8edf5" id="hubTitle">Hub</h2>
+<button class="btn" onclick="showLanding()">← Back to Fleet</button>
+</div>
+<div class="kpi-row" id="topKPIs"></div>
+<div class="tabs">
+<div class="tab active" onclick="switchTab(this,'overall')">Overall</div>
+<div class="tab" onclick="switchTab(this,'speed')">Speed</div>
+<div class="tab" onclick="switchTab(this,'reliability')">Reliability</div>
+<div class="tab" onclick="switchTab(this,'usage')">Usage</div>
+</div>
+<div id="tab-overall" class="tab-pane">
+<div class="grid-2">
+<div class="panel"><h3>Daily Events & Reliability</h3><div class="chart-box"><canvas id="dailyChart"></canvas></div></div>
+<div class="panel"><h3>North Star: Sub-1s Success Rate</h3><p style="color:var(--muted);font-size:10px;margin:-4px 0 8px">% of events completed end-to-end in under 1 second</p><div class="chart-box"><canvas id="nsChart"></canvas></div></div>
+</div>
+<div class="panel"><h3>Activity Heatmap — <span style="font-weight:400;color:var(--muted)">Hover for breakdown · Click to inspect in Log Center</span></h3>
+<div style="display:flex"><div class="y-label">Day of Week</div><div style="flex:1"><div id="heatmapContainer" class="heatmap-grid"></div><div style="text-align:center;font-size:10px;color:var(--muted);margin-top:4px">Hour of Day (0–23)</div></div></div></div>
+</div>
+<div id="tab-speed" class="tab-pane" style="display:none">
+<div class="panel"><h3>Speed Segments — Click any segment for event-level drill-down</h3>
+<p style="color:var(--muted);font-size:10px;margin-bottom:12px">Each segment shows where time is spent in the request pipeline.</p>
+<div id="speedSegments"></div></div>
+<div class="grid-2">
+<div class="panel"><h3>Latency Distribution — Click bar to inspect events</h3><div class="chart-box"><canvas id="latDistChart"></canvas></div></div>
+<div class="panel"><h3>Latency by Use Case</h3><div class="chart-box"><canvas id="ucLatChart"></canvas></div></div>
+</div>
+<div class="panel"><h3>Per Use Case Speed</h3><table><thead><tr><th>Use Case</th><th>Events</th><th>Avg (ms)</th><th>P50 (ms)</th><th>P95 (ms)</th><th>Status</th></tr></thead><tbody id="ucSpeedTable"></tbody></table></div>
+</div>
+<div id="tab-reliability" class="tab-pane" style="display:none">
+<div class="kpi-row" id="relKPIs"></div>
+<div class="panel"><h3>Per-Source Reliability — Click row to debug failures</h3><table><thead><tr><th>Source</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Action</th></tr></thead><tbody id="srcRelTable"></tbody></table></div>
+<div class="grid-2">
+<div class="panel"><h3>Reliability Trend — Click any point to inspect failures on that day</h3><div class="chart-box"><canvas id="relTrendChart"></canvas></div></div>
+<div class="panel"><h3>Dock Direct Detail — Click row for breakdown</h3><div class="scroll-table"><table><thead><tr><th>Dock ID</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Avg Resp (s)</th></tr></thead><tbody id="dockDetailTable"></tbody></table></div></div>
+</div>
+<div class="panel"><h3>Failures by Reason — Click to diagnose</h3><table><thead><tr><th>Reason</th><th>Count</th><th>Action</th></tr></thead><tbody id="failReasonTable"></tbody></table></div>
+<div class="panel"><h3>Failures by Device</h3><table><thead><tr><th>Device</th><th>Count</th><th>Reasons</th><th>Action</th></tr></thead><tbody id="failDevTable"></tbody></table></div>
+<div class="panel"><h3>All Failures Log — Click row for full detail</h3><table><thead><tr><th>Time</th><th>Use Case</th><th>Device</th><th>Room</th><th>Source</th><th>Reason</th><th>Latency</th></tr></thead><tbody id="failTable"></tbody></table></div>
+</div>
+<div id="tab-usage" class="tab-pane" style="display:none">
+<div class="grid-3" id="usageKPIs"></div>
+<div class="grid-2">
+<div class="panel"><h3>Source Breakdown</h3><div class="chart-box"><canvas id="srcChart"></canvas></div></div>
+<div class="panel"><h3>Device Activity — Click row for device details</h3><table><thead><tr><th>Device</th><th>Room</th><th>Events</th><th>Reliability</th><th>P50</th><th>Action</th></tr></thead><tbody id="devTable"></tbody></table></div>
+</div>
+</div>
+</div>
+<!-- LOG CENTER -->
+<div id="logCenterView" style="display:none">
+<div class="lc-header">
+<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+<div style="display:flex;align-items:flex-start;gap:14px">
+<div id="lcBackBtn" style="display:none;padding-top:2px"></div>
+<div><div class="lc-title">Log Center</div><div class="lc-subtitle">Event-level debugging workspace · Click any row to expand timing pipeline · 30-day window</div></div>
+</div>
+<div id="lcHubPills" class="lc-hub-pills"></div>
+</div>
+<div class="lc-tabs-row">
+<div class="lc-tabs">
+<button class="lc-tab tab-fail active" data-tab="failures" onclick="lcSetTab('failures')">Failures</button>
+<button class="lc-tab tab-slow" data-tab="slow" onclick="lcSetTab('slow')">Slow Events (&gt;800ms)</button>
+<button class="lc-tab tab-dock" data-tab="dock_loss" onclick="lcSetTab('dock_loss')">Dock Losses</button>
+<button class="lc-tab tab-all" data-tab="all" onclick="lcSetTab('all')">All Events</button>
+</div>
+<div class="lc-filters">
+<select id="lcFilterSrc" class="lc-filter-select" onchange="renderLogCenter()"><option value="">All Sources</option><option value="app">App Control (Local)</option><option value="remote">Remote App</option><option value="docklet">Dock Control</option><option value="direct">Automation</option></select>
+<select id="lcFilterReason" class="lc-filter-select" onchange="renderLogCenter()"><option value="">All Reasons</option><option value="TIMEOUT">TIMEOUT</option><option value="NO_RESPONSE">NO_RESPONSE</option><option value="DEVICE_OFFLINE">DEVICE_OFFLINE</option><option value="THREAD_MESH_FAIL">THREAD_MESH_FAIL</option></select>
+<input id="lcFilterSearch" class="lc-filter-input" placeholder="Device, room, use case…" oninput="renderLogCenter()">
+<button class="lc-filter-clear" onclick="lcClearFilters()">Clear</button>
+</div>
+</div>
+</div>
+<div style="padding:20px 28px">
+<div id="lcContextBanner" class="lc-context-banner" style="display:none"></div>
+<div class="lc-summary-row" id="lcSummaryRow"></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden">
+<div id="lcTableWrap" style="overflow-x:auto;max-height:620px;overflow-y:auto">
+<table class="lc-table">
+<thead id="lcTableHead"><tr>
+<th style="width:22px"></th><th>Timestamp</th><th>Hub</th><th>Use Case</th><th>Source</th><th>Device</th><th>Room</th><th>Latency</th><th>Status / Reason</th><th>Network</th>
+</tr></thead>
+<tbody id="lcTableBody"></tbody>
+</table>
+<div id="lcEmptyState" style="display:none;text-align:center;padding:56px 20px;color:var(--muted);font-size:12px">No events match the current filters.</div>
+</div>
+</div>
+</div>
+</div>
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+<div class="modal"><h2 id="modalTitle"><span></span><span class="close" onclick="closeModal()">✕</span></h2><div id="modalBody"></div></div>
+</div>
+<script src="dashboard_app.js"></script>
+</body>
+</html>

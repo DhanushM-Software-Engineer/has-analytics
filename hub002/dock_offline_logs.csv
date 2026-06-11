@@ -1,0 +1,13 @@
+timestamp,dock_id,event,total_event_count,success_count,failure_count,avg_response_duration
+,W-Dock002-01,toggle,123,119,4,0.027
+,W-Dock002-01,increment,8,7,1,0.032
+,W-Dock002-01,decrement,7,7,0,0.017
+,W-Dock002-02,toggle,122,119,3,0.027
+,W-Dock002-02,increment,4,3,1,0.03
+,W-Dock002-02,decrement,2,1,1,0.031
+,W-Dock002-03,toggle,102,101,1,0.026
+,W-Dock002-03,increment,3,3,0,0.037
+,W-Dock002-03,decrement,4,3,1,0.036
+,W-Dock002-04,toggle,5,4,1,0.037
+,W-Dock002-04,increment,3,2,1,0.037
+,W-Dock002-04,decrement,5,5,0,0.038

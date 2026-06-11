@@ -1,0 +1,4 @@
+scene_id,name,device_count
+scene_welcome,Welcome Home,4
+scene_goodnight,Good Night,6
+scene_away,Away Mode,5

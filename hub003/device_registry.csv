@@ -1,0 +1,6 @@
+entity_id,room,floor,type,name,dock_id,bound_to
+light.snap_garage_main,Garage,Ground Floor,snap,Snap Garage Main,dock_garage,switch.docklet_8
+light.snap_porch_main,Porch,Ground Floor,snap,Snap Porch Main,,
+fan.snap_guest_fan,Guest Room,First Floor,snap,Snap Guest Fan,dock_guest,switch.docklet_10
+light.snap_guest_main,Guest Room,First Floor,snap,Snap Guest Main,dock_guest,switch.docklet_9
+light.snap_hallway,Hallway,Ground Floor,snap,Snap Hallway,,

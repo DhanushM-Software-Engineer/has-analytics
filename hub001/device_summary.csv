@@ -1,0 +1,7 @@
+entity_id,room,floor,device_type,total_toggles,app_toggles,docklet_toggles,direct_toggles,reliability_pct,avg_latency_ms,p50_latency_ms,p95_latency_ms
+light.snap_living_main,Living Room,Ground Floor,snap,161,83,52,26,100.0,474,406,1231
+light.snap_living_accent,Living Room,Ground Floor,snap,183,99,62,22,98.91,499,399,1273
+fan.snap_living_fan,Living Room,Ground Floor,snap,159,71,63,25,98.74,445,392,1193
+light.snap_bedroom_main,Master Bedroom,First Floor,snap,211,110,66,35,99.05,472,406,1189
+light.snap_bedroom_bedside,Master Bedroom,First Floor,snap,112,83,0,29,97.32,542,477,1262
+fan.snap_bedroom_fan,Master Bedroom,First Floor,snap,113,87,0,26,98.23,551,527,1369

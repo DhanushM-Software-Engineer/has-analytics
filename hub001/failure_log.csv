@@ -1,0 +1,12 @@
+event_id,timestamp,date,time,use_case,source,entity_id,room,action,failure_reason,latency_ms,network_type,docklet_id,dock_id
+77a92b94-1de4-4e89-b74a-825174cc94ea,2025-06-15 20:56:15.378,2025-06-15,20:56:15,UC2,docklet,fan.snap_living_fan,Living Room,turn_on,DEVICE_OFFLINE,N/A,local,switch.docklet_3,dock_living
+54153c57-7887-422c-a5ec-44c03d7bcf73,2025-06-17 06:49:25.885,2025-06-17,06:49:25,UC3,app,light.snap_bedroom_bedside,Master Bedroom,bind,DEVICE_OFFLINE,N/A,local,switch.docklet_4,dock_bedroom
+91dcdb1e-182f-43bf-9d02-6ec53eac95bd,2025-06-17 20:46:43.406,2025-06-17,20:46:43,UC1,app,light.snap_bedroom_bedside,Master Bedroom,turn_off,TIMEOUT,6862,local,,
+d30109e4-1103-48de-be8a-deb16a3447e6,2025-06-18 23:34:16.817,2025-06-18,23:34:16,UC3,app,light.snap_living_accent,Living Room,bind,NO_RESPONSE,N/A,local,switch.docklet_1,dock_living
+752cf40c-fd4d-4c3c-8c41-f20941bb0146,2025-06-21 19:26:08.862,2025-06-21,19:26:08,UC1,app,fan.snap_bedroom_fan,Master Bedroom,turn_on,THREAD_MESH_FAIL,N/A,local,,
+9bc117a8-8f80-4163-919f-13004b188e2c,2025-06-22 17:58:05.111,2025-06-22,17:58:05,UC3,app,light.snap_living_accent,Living Room,bind,THREAD_MESH_FAIL,N/A,local,switch.docklet_2,dock_living
+0848c04b-3c1b-4719-894e-96801f9a3ba4,2025-06-25 07:27:40.439,2025-06-25,07:27:40,UC5,app_remote,light.snap_bedroom_main,Master Bedroom,turn_off,NO_RESPONSE,N/A,remote,,
+1899f23a-6f59-4c16-a072-bb74e57890ca,2025-06-25 11:43:20.436,2025-06-25,11:43:20,UC1,app,fan.snap_bedroom_fan,Master Bedroom,turn_on,NO_RESPONSE,N/A,local,,
+a52b100b-4b16-47d8-bced-dc1f495773ce,2025-07-02 18:30:58.940,2025-07-02,18:30:58,UC1,app,light.snap_bedroom_bedside,Master Bedroom,turn_on,TIMEOUT,8705,local,,
+83c882af-f01d-4ccd-8084-5128cb3a0ec1,2025-07-05 17:09:05.981,2025-07-05,17:09:05,UC5,app_remote,fan.snap_living_fan,Living Room,turn_on,THREAD_MESH_FAIL,N/A,remote,,
+2c967ad3-4c3d-46d7-802a-ca7a69bf92a9,2025-07-15 18:29:22.437,2025-07-15,18:29:22,UC5,app_remote,light.snap_bedroom_main,Master Bedroom,turn_off,TIMEOUT,8921,remote,,

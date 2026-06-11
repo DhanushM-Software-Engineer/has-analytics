@@ -1,0 +1,32 @@
+event_id,timestamp,date,time,use_case,source,entity_id,room,action,failure_reason,latency_ms,network_type,docklet_id,dock_id
+dd5c0df6-7779-4959-b2e4-e133a0424521,2025-06-15 08:36:23.849,2025-06-15,08:36:23,UC3,app,light.snap_study_main,Study Room,bind,DEVICE_OFFLINE,N/A,local,switch.docklet_6,dock_kitchen
+14a3ec7c-749f-4dd5-a2d4-c878f741546c,2025-06-15 08:53:32.772,2025-06-15,08:53:32,UC2,docklet,light.snap_kitchen_main,Kitchen,turn_on,TIMEOUT,6513,local,switch.docklet_5,dock_kitchen
+eefaf226-fa60-43d8-aef2-2ceb7da688a7,2025-06-16 11:03:05.316,2025-06-16,11:03:05,UC2,docklet,light.snap_kitchen_main,Kitchen,turn_off,NO_RESPONSE,N/A,local,switch.docklet_5,dock_kitchen
+501cf7e0-6703-4b80-a2a8-8b9ac3ea52ca,2025-06-17 19:53:47.322,2025-06-17,19:53:47,UC2,docklet,light.snap_kitchen_counter,Kitchen,turn_off,THREAD_MESH_FAIL,N/A,local,switch.docklet_6,dock_kitchen
+9d6101cc-e626-4386-b2a3-cd32289b7954,2025-06-18 22:41:19.234,2025-06-18,22:41:19,UC3,app,light.snap_kitchen_main,Kitchen,bind,DEVICE_OFFLINE,N/A,local,switch.docklet_6,dock_kitchen
+d3ff070a-a646-4d46-ae13-e05afa3b29f8,2025-06-18 19:11:00.146,2025-06-18,19:11:00,UC1,app,light.snap_kitchen_main,Kitchen,turn_on,THREAD_MESH_FAIL,N/A,local,,
+ab9ddc78-61d8-4abe-a111-4a45b7447665,2025-06-18 12:33:26.915,2025-06-18,12:33:26,UC1,app,light.snap_study_main,Study Room,turn_off,DEVICE_OFFLINE,N/A,local,,
+e3ecf6de-130f-465d-aae6-4e2d1449d3c0,2025-06-19 13:28:31.605,2025-06-19,13:28:31,UC5,app_remote,light.snap_study_main,Study Room,turn_on,THREAD_MESH_FAIL,N/A,remote,,
+237083b0-0199-4033-8c58-304af6dc54fc,2025-06-20 10:50:50.085,2025-06-20,10:50:50,UC5,app_remote,fan.snap_dining_fan,Dining Room,toggle,THREAD_MESH_FAIL,N/A,remote,,
+863e9840-e86f-4b85-a85f-3ba5bafb9e8e,2025-06-20 04:08:12.940,2025-06-20,04:08:12,UC1,app,light.snap_kitchen_main,Kitchen,turn_on,NO_RESPONSE,N/A,local,,
+00277c63-df5a-4b20-807d-dcf3857bb97f,2025-06-22 18:45:15.165,2025-06-22,18:45:15,UC5,app_remote,light.snap_kitchen_main,Kitchen,turn_on,THREAD_MESH_FAIL,N/A,remote,,
+f2bfd8d0-0f3e-4345-9e99-bb0d79dd79de,2025-06-22 16:26:51.845,2025-06-22,16:26:51,UC2,docklet,light.snap_kitchen_counter,Kitchen,turn_off,TIMEOUT,5669,local,switch.docklet_6,dock_kitchen
+5c218890-148b-46ba-ac91-c840cb345498,2025-06-22 20:47:45.432,2025-06-22,20:47:45,UC5,app_remote,fan.snap_dining_fan,Dining Room,toggle,NO_RESPONSE,N/A,remote,,
+47977e3c-2682-4bff-8ee4-8789ec6b7879,2025-06-25 15:12:31.767,2025-06-25,15:12:31,UC2,docklet,fan.snap_dining_fan,Dining Room,toggle,NO_RESPONSE,N/A,local,switch.docklet_7,dock_dining
+5c726556-f440-416e-9702-0386073863ea,2025-06-28 21:02:27.443,2025-06-28,21:02:27,UC1,app,light.snap_study_main,Study Room,turn_off,THREAD_MESH_FAIL,N/A,local,,
+17768f63-a296-466d-ab71-7ba3d641488a,2025-06-30 07:27:25.698,2025-06-30,07:27:25,UC1,app,fan.snap_dining_fan,Dining Room,turn_off,DEVICE_OFFLINE,N/A,local,,
+4d850a34-956f-4e20-a49f-70e353aa04b5,2025-06-30 14:20:14.877,2025-06-30,14:20:14,UC3,app,fan.snap_dining_fan,Dining Room,bind,TIMEOUT,5900,local,switch.docklet_6,dock_kitchen
+becc4662-fe0b-4b16-ab60-cda8a570a099,2025-07-02 19:16:53.875,2025-07-02,19:16:53,UC1,app,light.snap_kitchen_main,Kitchen,toggle,THREAD_MESH_FAIL,N/A,local,,
+cf2c9a3e-7cfb-45d3-8454-d6c8e4fde82e,2025-07-05 18:45:35.375,2025-07-05,18:45:35,UC5,app_remote,fan.snap_dining_fan,Dining Room,turn_off,NO_RESPONSE,N/A,remote,,
+9352a96d-7aab-42dd-9d7b-487585c0e097,2025-07-05 19:57:20.610,2025-07-05,19:57:20,UC5,app_remote,light.snap_study_main,Study Room,turn_off,NO_RESPONSE,N/A,remote,,
+32ed5690-b1b0-4230-8462-02fb9eae0b10,2025-07-05 13:01:55.073,2025-07-05,13:01:55,UC5,app_remote,light.snap_study_main,Study Room,turn_off,NO_RESPONSE,N/A,remote,,
+3f9f68d7-abd4-4bf2-9e57-29fd04e59400,2025-07-08 23:09:01.321,2025-07-08,23:09:01,UC5,app_remote,light.snap_kitchen_counter,Kitchen,toggle,THREAD_MESH_FAIL,N/A,remote,,
+fb5462f7-33dd-458b-92e7-0f4104a59ac3,2025-07-08 18:23:14.878,2025-07-08,18:23:14,UC3,app,light.snap_kitchen_main,Kitchen,bind,THREAD_MESH_FAIL,N/A,local,switch.docklet_5,dock_kitchen
+ad3e2b5e-534d-4929-9743-7012861d0adb,2025-07-09 14:45:19.745,2025-07-09,14:45:19,UC5,app_remote,light.snap_kitchen_main,Kitchen,turn_on,THREAD_MESH_FAIL,N/A,remote,,
+5b6eb7cc-1dac-4f0a-8448-10628eca64b6,2025-07-09 15:58:08.209,2025-07-09,15:58:08,UC3,app,light.snap_study_main,Study Room,bind,DEVICE_OFFLINE,N/A,local,switch.docklet_7,dock_dining
+6c1bb7f7-f647-4a72-9fd8-b62e18884ded,2025-07-12 20:21:10.330,2025-07-12,20:21:10,UC2,docklet,light.snap_kitchen_counter,Kitchen,toggle,DEVICE_OFFLINE,N/A,local,switch.docklet_6,dock_kitchen
+a79d2f21-cafa-4204-aeff-5d3df84d0fcd,2025-07-13 20:41:20.488,2025-07-13,20:41:20,UC3,app,light.snap_kitchen_main,Kitchen,bind,NO_RESPONSE,N/A,local,switch.docklet_7,dock_dining
+6bcd0176-0fda-4b15-82a3-e1e55e5a2c98,2025-07-13 10:23:53.123,2025-07-13,10:23:53,UC2,docklet,light.snap_kitchen_main,Kitchen,turn_off,THREAD_MESH_FAIL,N/A,local,switch.docklet_5,dock_kitchen
+6a4f5f99-f9f9-4f43-83ec-048370ffea74,2025-07-14 15:26:40.396,2025-07-14,15:26:40,UC5,app_remote,fan.snap_dining_fan,Dining Room,toggle,NO_RESPONSE,N/A,remote,,
+ef310f81-47d9-4f48-a151-5552a07b7b37,2025-07-14 18:38:14.485,2025-07-14,18:38:14,UC5,app_remote,light.snap_study_main,Study Room,toggle,TIMEOUT,6661,remote,,
+470d677b-a5ab-4d98-910c-6a8e70cf001f,2025-07-14 17:52:07.649,2025-07-14,17:52:07,UC1,app,light.snap_kitchen_main,Kitchen,turn_off,THREAD_MESH_FAIL,N/A,local,,
