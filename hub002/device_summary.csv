@@ -1,5 +1,0 @@
-entity_id,room,floor,device_type,total_toggles,app_toggles,docklet_toggles,direct_toggles,reliability_pct,avg_latency_ms,p50_latency_ms,p95_latency_ms
-light.snap_kitchen_main,Kitchen,Ground Floor,snap,414,241,116,57,97.1,512,428,1299
-light.snap_kitchen_counter,Kitchen,Ground Floor,snap,366,195,115,56,98.91,485,409,1234
-fan.snap_dining_fan,Dining Room,Ground Floor,snap,311,176,96,39,97.75,488,411,1221
-light.snap_study_main,Study Room,First Floor,snap,267,202,0,65,97.0,553,489,1345

@@ -1,7 +1,0 @@
-entity_id,room,floor,type,name,dock_id,bound_to
-light.snap_living_main,Living Room,Ground Floor,snap,Snap Living Main,dock_living,switch.docklet_1
-light.snap_living_accent,Living Room,Ground Floor,snap,Snap Living Accent,dock_living,switch.docklet_2
-fan.snap_living_fan,Living Room,Ground Floor,snap,Snap Living Fan,dock_living,switch.docklet_3
-light.snap_bedroom_main,Master Bedroom,First Floor,snap,Snap Bedroom Main,dock_bedroom,switch.docklet_4
-light.snap_bedroom_bedside,Master Bedroom,First Floor,snap,Snap Bedroom Bedside,,
-fan.snap_bedroom_fan,Master Bedroom,First Floor,snap,Snap Bedroom Fan,,

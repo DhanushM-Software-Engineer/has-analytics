@@ -1,5 +1,0 @@
-entity_id,room,floor,type,name,dock_id,bound_to
-light.snap_kitchen_main,Kitchen,Ground Floor,snap,Snap Kitchen Main,dock_kitchen,switch.docklet_5
-light.snap_kitchen_counter,Kitchen,Ground Floor,snap,Snap Kitchen Counter,dock_kitchen,switch.docklet_6
-fan.snap_dining_fan,Dining Room,Ground Floor,snap,Snap Dining Fan,dock_dining,switch.docklet_7
-light.snap_study_main,Study Room,First Floor,snap,Snap Study Main,,

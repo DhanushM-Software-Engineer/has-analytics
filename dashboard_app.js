@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 //  SCHNELL FLEET DEBUGGING DASHBOARD
 // ═══════════════════════════════════════════════════════════
-const D=DASHBOARD_DATA;
+const D={};
 let charts={},activeHub=null;
 document.getElementById('hubCount').textContent=Object.keys(D).length;
 Chart.defaults.color='#5a7090';Chart.defaults.borderColor='#1d2d40';
@@ -1349,4 +1349,8 @@ function showFleetModal(type){
   showModal(title,body);
 }
 
-window.onload=renderLanding;
+window.onload=async()=>{
+  const{hubs}=await fetch('/api/hubs').then(r=>r.json());
+  await Promise.all(hubs.map(async h=>{D[h]=await fetch(`/api/hub/${h}?days=30`).then(r=>r.json())}));
+  renderLanding();
+};

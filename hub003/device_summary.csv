@@ -1,6 +1,0 @@
-entity_id,room,floor,device_type,total_toggles,app_toggles,docklet_toggles,direct_toggles,reliability_pct,avg_latency_ms,p50_latency_ms,p95_latency_ms
-light.snap_garage_main,Garage,Ground Floor,snap,308,164,104,40,97.4,480,414,1258
-light.snap_porch_main,Porch,Ground Floor,snap,191,142,0,49,98.43,551,503,1324
-fan.snap_guest_fan,Guest Room,First Floor,snap,314,143,123,48,97.45,467,390,1257
-light.snap_guest_main,Guest Room,First Floor,snap,343,190,110,43,98.25,479,408,1251
-light.snap_hallway,Hallway,Ground Floor,snap,223,178,0,45,98.65,591,515,1363
