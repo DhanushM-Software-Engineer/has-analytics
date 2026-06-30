@@ -238,18 +238,15 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div class="panel"><h3>Per-Source Reliability — Click row to debug failures</h3><table><thead><tr><th>Source</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Action</th></tr></thead><tbody id="srcRelTable"></tbody></table></div>
 <div class="grid-2">
 <div class="panel"><h3>Reliability Trend — Click any point to inspect failures on that day</h3><div class="chart-box"><canvas id="relTrendChart"></canvas></div></div>
-<div class="panel"><h3>Dock Direct Detail — Click row for breakdown</h3><div class="scroll-table"><table><thead><tr><th>Dock ID</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Avg Resp (s)</th></tr></thead><tbody id="dockDetailTable"></tbody></table></div></div>
+<div class="panel"><h3>Dock Reliability — Click row for action breakdown</h3><div class="scroll-table"><table><thead><tr><th>Dock ID</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Actions</th></tr></thead><tbody id="dockDetailTable"></tbody></table></div></div>
 </div>
 <div class="panel"><h3>Failures by Reason — Click to diagnose</h3><table><thead><tr><th>Reason</th><th>Count</th><th>Action</th></tr></thead><tbody id="failReasonTable"></tbody></table></div>
 <div class="panel"><h3>Failures by Device</h3><table><thead><tr><th>Device</th><th>Count</th><th>Reasons</th><th>Action</th></tr></thead><tbody id="failDevTable"></tbody></table></div>
-<div class="panel"><h3>All Failures Log — Click row for full detail</h3><table><thead><tr><th>Time</th><th>Use Case</th><th>Device</th><th>Room</th><th>Source</th><th>Reason</th><th>Latency</th></tr></thead><tbody id="failTable"></tbody></table></div>
 </div>
 <div id="tab-usage" class="tab-pane" style="display:none">
 <div class="grid-3" id="usageKPIs"></div>
-<div class="grid-2">
 <div class="panel"><h3>Source Breakdown</h3><div class="chart-box"><canvas id="srcChart"></canvas></div></div>
-<div class="panel"><h3>Device Activity — Click row for device details</h3><table><thead><tr><th>Device</th><th>Room</th><th>Events</th><th>Reliability</th><th>P50</th><th>Action</th></tr></thead><tbody id="devTable"></tbody></table></div>
-</div>
+<div class="panel" id="dockUsagePanel" style="display:none;margin-top:16px"></div>
 </div>
 </div>
 <!-- LOG CENTER -->
@@ -266,7 +263,6 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div class="lc-tabs">
 <button class="lc-tab tab-fail active" data-tab="failures" onclick="lcSetTab('failures')">Failures</button>
 <button class="lc-tab tab-slow" data-tab="slow" onclick="lcSetTab('slow')">Slow Events (&gt;800ms)</button>
-<button class="lc-tab tab-dock" data-tab="dock_loss" onclick="lcSetTab('dock_loss')">Dock Losses</button>
 <button class="lc-tab tab-all" data-tab="all" onclick="lcSetTab('all')">All Events</button>
 </div>
 <div class="lc-filters">

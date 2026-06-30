@@ -90,6 +90,20 @@ The `--reload` flag auto-restarts the server whenever you save changes to `main.
 
 Press **Ctrl + C** in the terminal.
 
+### Restart the server (port already in use)
+
+If you see `[Errno 48] Address already in use`, kill the occupying process first:
+
+```bash
+kill -9 $(lsof -ti :8080)
+```
+
+Then start again (assuming you're already in `Analytics/analytics-api` with venv active):
+
+```bash
+uvicorn main:app --reload --port 8080
+```
+
 ---
 
 ## API Endpoints

@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from google.cloud import bigquery
+from datetime import date, timedelta
+import openpyxl
 import os
 
 app = FastAPI()
@@ -11,6 +13,97 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 
 PROJECT = "schnell-home-automation"
 client  = bigquery.Client(project=PROJECT)
+
+# ── Dock data — loaded once from xlsx at startup ──────────────────────────────
+_DOCK_XLSX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dock_data.xlsx")
+
+def _load_dock_rows():
+    wb = openpyxl.load_workbook(_DOCK_XLSX)
+    ws = wb.active
+    headers = [cell.value for cell in ws[1]]
+    rows = []
+    for r in ws.iter_rows(min_row=2, values_only=True):
+        row = dict(zip(headers, r))
+        row["total_action_count"] = int(row["total_action_count"] or 0)
+        row["success_count"]      = int(row["success_count"]      or 0)
+        row["failure_count"]      = int(row["failure_count"]       or 0)
+        rows.append(row)
+    return rows
+
+_DOCK_ROWS = _load_dock_rows()
+
+def _dock_rows_for_hub(hub_id: str, days: int):
+    """Return xlsx rows that belong to this hub (via ha_logs dock_id mapping) within the day window."""
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    # get dock_ids associated with this hub from ha_logs
+    dock_ids = {r["dock_id"] for r in q(f"""
+        SELECT DISTINCT dock_id
+        FROM `{PROJECT}.schnell_analytics.ha_logs`
+        WHERE hub_id = @hub_id AND dock_id IS NOT NULL
+    """, [bigquery.ScalarQueryParameter("hub_id", "STRING", hub_id)])}
+    return [
+        r for r in _DOCK_ROWS
+        if r["dock_id"] in dock_ids and r["date"] >= cutoff
+    ]
+
+def _build_dock_stats(rows):
+    """Aggregate xlsx rows into per-docklet dock_stats list."""
+    from collections import defaultdict
+    by_docklet = defaultdict(lambda: {"total": 0, "success": 0, "failure": 0, "actions": defaultdict(lambda: {"total": 0, "success": 0, "failure": 0})})
+    dock_id_map = {}
+    for r in rows:
+        key = r["docklet_id"]
+        dock_id_map[key] = r["dock_id"]
+        by_docklet[key]["total"]   += r["total_action_count"]
+        by_docklet[key]["success"] += r["success_count"]
+        by_docklet[key]["failure"] += r["failure_count"]
+        a = by_docklet[key]["actions"][r["action"]]
+        a["total"]   += r["total_action_count"]
+        a["success"] += r["success_count"]
+        a["failure"] += r["failure_count"]
+    stats = []
+    for docklet_id, d in by_docklet.items():
+        rel = round(100 * d["success"] / d["total"], 2) if d["total"] else 0
+        actions = [
+            {"action": act, **v,
+             "rel": round(100 * v["success"] / v["total"], 2) if v["total"] else 0}
+            for act, v in d["actions"].items()
+        ]
+        stats.append({
+            "dock_id":    dock_id_map[docklet_id],
+            "docklet_id": docklet_id,
+            "total":      d["total"],
+            "success":    d["success"],
+            "failure":    d["failure"],
+            "rel":        rel,
+            "actions":    actions,
+        })
+    return stats
+
+def _build_dock_usage(rows):
+    """Aggregate xlsx rows into dock_usage summary."""
+    from collections import defaultdict
+    by_action  = defaultdict(int)
+    by_docklet = defaultdict(int)
+    by_date    = defaultdict(lambda: {"total": 0, "success": 0, "failure": 0})
+    for r in rows:
+        by_action[r["action"]]    += r["total_action_count"]
+        by_docklet[r["docklet_id"]] += r["total_action_count"]
+        by_date[r["date"]]["total"]   += r["total_action_count"]
+        by_date[r["date"]]["success"] += r["success_count"]
+        by_date[r["date"]]["failure"] += r["failure_count"]
+    total = sum(by_action.values())
+    daily = [
+        {"date": d, "day": rows[[r["date"] for r in rows].index(d)]["day_of_week"],
+         **v, "rel": round(100 * v["success"] / v["total"], 2) if v["total"] else 0}
+        for d, v in sorted(by_date.items())
+    ]
+    return {
+        "total":      total,
+        "by_action":  dict(by_action),
+        "by_docklet": dict(by_docklet),
+        "daily":      daily,
+    }
 
 def q(sql, params):
     job = client.query(sql, job_config=bigquery.QueryJobConfig(
@@ -236,6 +329,85 @@ def hub_detail(hub_id: str, days: int = Query(default=30, ge=1, le=90)):
     at=sum(r["total"] for r in a_rows); as_=sum(r["success"] for r in a_rows)
     dt=sum(r["total"] for r in d_rows); ds =sum(r["success"] for r in d_rows)
 
+    # ── hub_to_snap_count (total HA SNAP commands issued) ────────────────
+    ha_cnt_rows = q(f"""
+        SELECT COUNT(*) AS cnt
+        FROM {HL}
+        WHERE hub_id=@hub_id
+          AND DATE(event_timestamp)>=DATE_SUB(CURRENT_DATE(),INTERVAL @days DAY)
+    """, p)
+    hub_to_snap_count = ha_cnt_rows[0]["cnt"] if ha_cnt_rows else 0
+
+    # ── Failures by reason ───────────────────────────────────────────────
+    fbr_rows = q(f"""
+        SELECT failure_reason AS reason, COUNT(*) AS cnt
+        FROM {AL}
+        WHERE hub_id=@hub_id AND success=false AND failure_reason IS NOT NULL
+          AND DATE(event_timestamp)>=DATE_SUB(CURRENT_DATE(),INTERVAL @days DAY)
+        GROUP BY failure_reason ORDER BY cnt DESC
+    """, p)
+    fbr_ev_rows = q(f"""
+        SELECT failure_reason AS reason, event_timestamp AS ts,
+               entity_id AS dev, friendly_name, use_case AS uc,
+               trigger_method AS src, room, CAST(latency_ms AS STRING) AS lat
+        FROM {AL}
+        WHERE hub_id=@hub_id AND success=false AND failure_reason IS NOT NULL
+          AND DATE(event_timestamp)>=DATE_SUB(CURRENT_DATE(),INTERVAL @days DAY)
+        ORDER BY event_timestamp DESC LIMIT 300
+    """, p)
+    fbr_ev_map = {}
+    for e in fbr_ev_rows:
+        r_ = e.pop("reason")
+        fbr_ev_map.setdefault(r_, []).append(e)
+    fail_by_reason = {
+        r["reason"]: {"count": r["cnt"], "events": fbr_ev_map.get(r["reason"], [])}
+        for r in fbr_rows
+    }
+
+    # ── Failures by device ───────────────────────────────────────────────
+    fbd_rows = q(f"""
+        SELECT entity_id AS dev, failure_reason AS reason, COUNT(*) AS cnt
+        FROM {AL}
+        WHERE hub_id=@hub_id AND success=false
+          AND DATE(event_timestamp)>=DATE_SUB(CURRENT_DATE(),INTERVAL @days DAY)
+        GROUP BY entity_id, failure_reason ORDER BY entity_id, cnt DESC
+    """, p)
+    fail_by_device = {}
+    for r in fbd_rows:
+        dev = r["dev"] or "unknown"
+        if dev not in fail_by_device:
+            fail_by_device[dev] = {"count": 0, "reasons": {}}
+        reason_key = r["reason"] or "UNKNOWN"
+        fail_by_device[dev]["reasons"][reason_key] = r["cnt"]
+        fail_by_device[dev]["count"] += r["cnt"]
+
+    # ── Usage (source breakdown) ─────────────────────────────────────────
+    usage_rows = q(f"""
+        SELECT
+            COUNTIF(use_case IN ('Local App Control','Device Bind (App)')) AS app,
+            COUNTIF(use_case='Docklet Press (App)') AS docklet,
+            COUNTIF(use_case='Remote App Control')  AS remote,
+            COUNTIF(use_case='Observed Change (App)') AS direct
+        FROM {AL}
+        WHERE hub_id=@hub_id
+          AND DATE(event_timestamp)>=DATE_SUB(CURRENT_DATE(),INTERVAL @days DAY)
+    """, p)
+    ur = usage_rows[0] if usage_rows else {}
+    app_cnt     = int(ur.get("app",     0) or 0)
+    docklet_cnt = int(ur.get("docklet", 0) or 0)
+    remote_cnt  = int(ur.get("remote",  0) or 0)
+    direct_cnt  = int(ur.get("direct",  0) or 0)
+    h_total = app_cnt + docklet_cnt
+    usage = {
+        "app":          app_cnt,
+        "docklet":      docklet_cnt,
+        "remote":       remote_cnt,
+        "direct":       direct_cnt,
+        "app_ratio":    round(100 * app_cnt     / h_total, 2) if h_total else 0,
+        "dock_ratio":   round(100 * docklet_cnt / h_total, 2) if h_total else 0,
+        "scene_per_day": round(direct_cnt / days, 2),
+    }
+
     return {
         "total":       kpi["total"],
         "success":     kpi["success"],
@@ -256,13 +428,20 @@ def hub_detail(hub_id: str, days: int = Query(default=30, ge=1, le=90)):
         "reliability_detail": {
             "app_trigger_feedback":  round(100*as_/at,2) if at else 0,
             "dock_trigger_feedback": round(100*ds/dt,2)  if dt else 0,
-            "dock_to_hub":    0,
-            "hub_to_app":     0,
-            "dock_offline_rel": 0,
-            "dock_avg_resp":  0,
-            "src_rel":        src_rel,
-            "dock_stats":     [],
+            "hub_to_app":        0,
+            "app_triggers":      at,
+            "app_feedbacks":     as_,
+            "dock_triggers":     dt,
+            "dock_feedbacks":    ds,
+            "hub_to_snap_count": hub_to_snap_count,
+            "src_rel":           src_rel,
+            "dock_stats":        _build_dock_stats(_dock_rows_for_hub(hub_id, days)),
         },
+        "dock_usage":     _build_dock_usage(_dock_rows_for_hub(hub_id, days)),
+        "usage":          usage,
+        "devices":        [],
+        "fail_by_reason": fail_by_reason,
+        "fail_by_device": fail_by_device,
     }
 
 _root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")

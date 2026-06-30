@@ -949,11 +949,15 @@ window.showUCDetail=function(uc){
 // ═══════════════════════════════════════════════════════════
 function renderReliability(d){
   const r=d.reliability_detail;
+  const dockStats=r.dock_stats||[];
+  const dsTot=dockStats.reduce((s,dk)=>s+dk.total,0);
+  const dsSucc=dockStats.reduce((s,dk)=>s+dk.success,0);
+  const dockRel=dsTot>0?+(100*dsSucc/dsTot).toFixed(2):(r.dock_trigger_feedback||0);
+  const relKPIEl=document.getElementById('relKPIs');
+  if(relKPIEl)relKPIEl.style.gridTemplateColumns='repeat(2,1fr)';
   document.getElementById('relKPIs').innerHTML=`
-    <div class="kpi" onclick="showRelModal('app_trigger')"><div class="label">App Trigger → Feedback</div><div class="value" style="color:${relColor(r.app_trigger_feedback)}">${r.app_trigger_feedback}%</div><div class="formula-ref">= ${r.app_feedbacks} ÷ ${r.app_triggers}</div><div class="sub">Click to debug</div></div>
-    <div class="kpi" onclick="showRelModal('dock_trigger')"><div class="label">Dock Trigger → Feedback</div><div class="value" style="color:${relColor(r.dock_trigger_feedback)}">${r.dock_trigger_feedback}%</div><div class="formula-ref">= ${r.dock_feedbacks} ÷ ${r.dock_triggers}</div><div class="sub">Click to debug</div></div>
-    <div class="kpi" onclick="showRelModal('dock_hub')"><div class="label">Dock → Hub Transit</div><div class="value" style="color:${relColor(r.dock_to_hub)}">${r.dock_to_hub}%</div><div class="formula-ref">= ${r.dock_triggers} ÷ ${r.dock_total_offline}</div><div class="sub">Click to debug</div></div>
-    <div class="kpi" onclick="showRelModal('hub_app')"><div class="label">Hub → App Confirm</div><div class="value" style="color:${relColor(r.hub_to_app)}">${r.hub_to_app}%</div><div class="formula-ref">= ${r.app_feedbacks} ÷ ${r.hub_to_snap_count}</div><div class="sub">Click to debug</div></div>`;
+    <div class="kpi" onclick="showRelModal('app_trigger')"><div class="label">App Trigger → Feedback</div><div class="value" style="color:${relColor(r.app_trigger_feedback)}">${r.app_trigger_feedback}%</div><div class="formula-ref">= ${r.app_feedbacks||0} ÷ ${r.app_triggers||0}</div><div class="sub">Click to debug</div></div>
+    <div class="kpi" onclick="showRelModal('dock_trigger')"><div class="label">Dock Trigger Reliability</div><div class="value" style="color:${relColor(dockRel)}">${dockRel}%</div><div class="formula-ref">${dsSucc} success · ${dsTot-dsSucc} failed of ${dsTot}</div><div class="sub">Click for breakdown</div></div>`;
 
   const srt=document.getElementById('srcRelTable');srt.innerHTML='';
   if(r.src_rel){Object.entries(r.src_rel).forEach(([src,v])=>{
@@ -966,15 +970,16 @@ function renderReliability(d){
     </tr>`})}
 
   const ddt=document.getElementById('dockDetailTable');ddt.innerHTML='';
-  if(r.dock_detail){r.dock_detail.forEach((dd,i)=>{
-    const relPct=dd.total>0?((dd.success/dd.total)*100).toFixed(2):'N/A';
-    const rc2=parseFloat(relPct)>97?'tag-green':parseFloat(relPct)>93?'tag-yellow':'tag-red';
-    ddt.innerHTML+=`<tr class="clickable" onclick="showDockDetailModal(${i})">
-    <td style="font-family:monospace;font-size:11px">${dd.dock_id}</td><td>${dd.total}</td>
-    <td style="color:var(--green)">${dd.success}</td>
-    <td style="color:${dd.fail>0?'var(--red)':'inherit'};font-weight:${dd.fail>0?600:400}">${dd.fail}</td>
-    <td><span class="tag ${rc2}">${relPct}%</span></td>
-    <td>${dd.avg_resp.toFixed(3)}s</td></tr>`})}
+  if(dockStats.length){dockStats.forEach(ds=>{
+    const rc2=relTag(ds.rel||0);
+    const acts=(ds.actions||[]).map(a=>a.action.charAt(0).toUpperCase()+a.action.slice(1)).join(', ')||'—';
+    ddt.innerHTML+=`<tr class="clickable" onclick="showDockStatModal(${JSON.stringify(ds).replace(/"/g,'&quot;')})">
+    <td style="font-family:monospace;font-size:11px">${ds.dock_id}</td><td>${ds.total}</td>
+    <td style="color:var(--green)">${ds.success}</td>
+    <td style="color:${ds.failure>0?'var(--red)':'inherit'};font-weight:${ds.failure>0?600:400}">${ds.failure}</td>
+    <td><span class="tag ${rc2}">${ds.rel}%</span></td>
+    <td style="font-size:10px;color:var(--muted)">${acts}</td></tr>`})}
+  else{ddt.innerHTML='<tr><td colspan="6" style="color:var(--muted);font-size:11px;text-align:center;padding:14px">No dock data yet</td></tr>'}
 
   const dates=d.daily.map(r=>r.date.slice(5));
   charts.relTrend=mc('relTrendChart',{type:'line',data:{labels:dates,datasets:[
@@ -1001,15 +1006,6 @@ function renderReliability(d){
     <td style="font-size:10px;color:var(--muted)">${reasons}</td>
     <td style="font-size:10px;color:var(--blue)">Inspect →</td></tr>`})}
 
-  const ft=document.getElementById('failTable');ft.innerHTML='';
-  d.failures.forEach((f,i)=>{
-    ft.innerHTML+=`<tr class="clickable" onclick="showFailModal(${i})">
-    <td style="font-size:10px;font-family:monospace;color:var(--muted)">${f.ts}</td>
-    <td style="font-size:11px">${f.uc}</td>
-    <td style="font-size:10px;font-family:monospace">${(f.dev||'').replace('light.snap_','')}</td>
-    <td>${f.room}</td><td style="font-size:10px">${f.src}</td>
-    <td><span class="tag tag-red">${f.reason}</span></td>
-    <td style="font-size:10px;color:${f.lat&&f.lat!=='N/A'?'var(--red)':'var(--muted)'}">${f.lat||'—'}</td></tr>`});
 }
 
 window.showSrcRelModal=function(src,total,success,fail,rel){
@@ -1124,115 +1120,114 @@ function showRelModal(type){
     </div>${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}</div>`;
 
   } else if(type==='dock_trigger'){
-    title='Dock Trigger → Feedback — Debug';
-    const fails=failuresFor(hub,f=>(f.src||'').toLowerCase().includes('docklet')||(f.src||'').toLowerCase().includes('dock'));
-    const lcOpts={hub,tab:'failures',srcFilter:'Dock Control',context:{label:'Dock Trigger Failures',desc:`${r.dock_triggers-r.dock_feedbacks} dock-initiated failures on ${hub.toUpperCase()}`}};
+    title='Dock Trigger Reliability — Debug';
+    const dockStats=r.dock_stats||[];
+    const dsTot=dockStats.reduce((s,dk)=>s+dk.total,0);
+    const dsSucc=dockStats.reduce((s,dk)=>s+dk.success,0);
+    const dsFail=dockStats.reduce((s,dk)=>s+dk.failure,0);
+    const dockRel=dsTot>0?+(100*dsSucc/dsTot).toFixed(2):0;
     body=`<table style="font-size:12px;margin-bottom:4px">
-      ${row('Formula','Dock Feedbacks ÷ Dock Triggers (at Hub)')}
-      ${row('Dock Triggers @ Hub',`<strong style="font-size:16px">${r.dock_triggers}</strong>`)}
-      ${row('Dock Feedbacks',`<strong>${r.dock_feedbacks}</strong>`)}
-      ${row('Failed',`<strong style="color:var(--red)">${r.dock_triggers-r.dock_feedbacks}</strong>`)}
-      ${row('Reliability',`<strong style="font-size:16px;color:${relColor(r.dock_trigger_feedback)}">${r.dock_trigger_feedback}%</strong>`)}
+      ${row('Total Dock Actions',`<strong style="font-size:16px">${dsTot||'No data yet'}</strong>`)}
+      ${dsTot?row('Successful',`<strong style="color:var(--green)">${dsSucc}</strong>`):''}
+      ${dsTot?row('Failed',`<strong style="color:var(--red);font-size:16px">${dsFail}</strong>`):''}
+      ${dsTot?row('Reliability',`<strong style="font-size:16px;color:${relColor(dockRel)}">${dockRel}%</strong>`):''}
     </table>
-    <div class="dbg-section"><div class="dbg-section-hdr">
-      <span class="dbg-section-title">Dock Failure Events (${fails.length})</span>
-      <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View in Log Center →</button>
-    </div>${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}</div>`;
+    ${dockStats.length?`<div class="dbg-section">
+      <div class="dbg-section-hdr"><span class="dbg-section-title">Per Dock Breakdown (${dockStats.length} dock${dockStats.length!==1?'s':''})</span></div>
+      <table style="font-size:11px"><thead><tr><th>Dock</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th></tr></thead><tbody>
+      ${dockStats.map(ds=>`<tr class="clickable" onclick="closeModal();setTimeout(()=>showDockStatModal(${JSON.stringify(ds).replace(/"/g,'&quot;')}),50)">
+        <td style="font-family:monospace;font-size:10px">${ds.dock_id}</td>
+        <td>${ds.total}</td><td style="color:var(--green)">${ds.success}</td>
+        <td style="color:${ds.failure>0?'var(--red)':'inherit'}">${ds.failure}</td>
+        <td><span class="tag ${relTag(ds.rel||0)}">${ds.rel}%</span></td></tr>`).join('')}
+      </tbody></table></div>`:'<div class="dbg-section"><p style="font-size:11px;color:var(--muted);padding:8px 0">Dock data will appear here once dock logs are connected.</p></div>'}`;
 
-  } else if(type==='dock_hub'){
-    title='Dock → Hub Transit — Debug';
-    const lost=(r.dock_total_offline||0)-(r.dock_triggers||0);
-    const lcOpts={hub,tab:'dock_loss',context:{label:'Dock → Hub Transit Loss',desc:`${lost} events lost in transit`}};
-    body=`<table style="font-size:12px;margin-bottom:4px">
-      ${row('Formula','Hub Dock Events ÷ Dock Direct Events')}
-      ${row('Dock Direct Events',`<strong style="font-size:16px">${r.dock_total_offline}</strong>`)}
-      ${row('Received at Hub',`<strong>${r.dock_triggers}</strong>`)}
-      ${row('Lost in Transit',`<strong style="color:var(--red);font-size:16px">${lost}</strong>`)}
-      ${row('Transit Reliability',`<strong style="font-size:16px;color:${relColor(r.dock_to_hub)}">${r.dock_to_hub}%</strong>`)}
-    </table>
-    <div class="dbg-section"><p style="font-size:11px;color:var(--muted);line-height:1.6">${lost>0?`<strong style="color:var(--red)">${lost} button presses from physical docks were lost over the Thread mesh.</strong> Root cause: Thread mesh coverage gaps, RF interference, or overloaded border router.`:'All dock events are reaching the hub normally.'}</p></div>
-    <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View Dock Losses in Log Center →</button></div>`;
-
-  } else {
-    title='Hub → App Reliability — Debug';
-    const lost=(r.hub_to_snap_count||0)-(r.app_feedbacks||0);
-    // Hub→App: show all E2E events (local + remote) — these are the events where hub pushes back to app
-    const lcOpts={hub,tab:'all',segFilter:'local_e2e',context:{label:'Hub → App Events (Local E2E)',desc:`${hub.toUpperCase()} · ${r.hub_to_snap_count} SNAP commands · ${lost} unconfirmed by app`}};
-    body=`<table style="font-size:12px;margin-bottom:4px">
-      ${row('Formula','App Feedbacks ÷ Hub SNAP Commands')}
-      ${row('Hub → SNAP Commands',`<strong style="font-size:16px">${r.hub_to_snap_count}</strong>`)}
-      ${row('App Confirmations',`<strong>${r.app_feedbacks}</strong>`)}
-      ${row('Unconfirmed',`<strong style="color:var(--red)">${lost}</strong>`)}
-      ${row('Reliability',`<strong style="font-size:16px;color:${relColor(r.hub_to_app)}">${r.hub_to_app}%</strong>`)}
-    </table>
-    <div class="dbg-section"><p style="font-size:11px;color:var(--muted);line-height:1.6">${lost>0?`<strong style="color:var(--red)">${lost} state changes were not confirmed by the app.</strong> Root cause: WebSocket disconnection or app in background state.`:'All hub state changes confirmed by app.'}</p></div>
-    <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">Inspect in Log Center →</button></div>`;
   }
   showModal(title,body);
 }
 
-function showDockDetailModal(idx){
-  const dd=D[activeHub].reliability_detail.dock_detail[idx];if(!dd)return;
-  const relPct=dd.total>0?((dd.success/dd.total)*100).toFixed(2):'N/A';
-  const rc=parseFloat(relPct)>97?'var(--green)':parseFloat(relPct)>93?'var(--yellow)':'var(--red)';
+function showDockStatModal(ds){
+  if(!ds)return;
+  const relPct=ds.rel!=null?ds.rel:(ds.total>0?+(100*ds.success/ds.total).toFixed(2):0);
+  const rc=relColor(relPct);
   const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
-  const lcOpts={hub:activeHub,tab:'dock_loss',context:{label:`Dock: ${dd.dock_id}`,desc:`${dd.fail} failures`}};
-  let evHtml='';
-  if(dd.events&&Object.keys(dd.events).length>0){
-    evHtml=`<div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Event Type</span></div>
+  const actions=ds.actions||[];
+  let actHtml='';
+  if(actions.length){
+    actHtml=`<div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Action Breakdown (${actions.length} types)</span></div>
     <table style="font-size:11px;width:100%"><thead><tr style="border-bottom:1px solid var(--border)">
-      <th style="text-align:left;padding:5px 8px">Event</th><th>Total</th><th>Success</th><th>Fail</th><th>Reliability</th><th>Avg Response</th>
-    </tr></thead><tbody>`;
-    Object.entries(dd.events).forEach(([ev,d])=>{
-      const erc=d.rel>97?'tag-green':d.rel>93?'tag-yellow':'tag-red';
-      evHtml+=`<tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:5px 8px;font-weight:500">${ev}</td>
-        <td style="text-align:center;padding:5px 8px">${d.total}</td>
-        <td style="text-align:center;padding:5px 8px;color:var(--green)">${d.success}</td>
-        <td style="text-align:center;padding:5px 8px;color:${d.fail>0?'var(--red)':'inherit'}">${d.fail}</td>
-        <td style="text-align:center;padding:5px 8px"><span class="tag ${erc}">${d.rel}%</span></td>
-        <td style="text-align:center;padding:5px 8px">${d.avg_resp.toFixed(4)}s</td>
-      </tr>`});
-    evHtml+='</tbody></table></div>';
+      <th style="text-align:left;padding:5px 8px">Action</th><th>Total</th><th>Success</th><th>Fail</th><th>Reliability</th>
+    </tr></thead><tbody>
+    ${actions.map(a=>{const arc=relTag(a.rel||0);return`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:5px 8px;font-weight:500">${a.action}</td>
+      <td style="text-align:center;padding:5px 8px">${a.total}</td>
+      <td style="text-align:center;padding:5px 8px;color:var(--green)">${a.success}</td>
+      <td style="text-align:center;padding:5px 8px;color:${a.failure>0?'var(--red)':'inherit'}">${a.failure}</td>
+      <td style="text-align:center;padding:5px 8px"><span class="tag ${arc}">${a.rel||0}%</span></td>
+    </tr>`;}).join('')}
+    </tbody></table></div>`;
   }
-  showModal(`Dock: ${dd.dock_id}`,`<table style="font-size:12px">
-    ${row('Dock ID',`<strong style="font-family:monospace;font-size:13px">${dd.dock_id}</strong>`)}
-    ${row('Total Events',`<strong style="font-size:16px">${dd.total}</strong>`)}
-    ${row('Successful',`<strong style="color:var(--green)">${dd.success}</strong>`)}
-    ${row('Failed',`<strong style="color:var(--red);font-size:16px">${dd.fail}</strong>`)}
-    ${row('Reliability',`<strong style="color:${rc};font-size:16px">${relPct}%</strong>`)}
-    ${row('Avg Response',`${dd.avg_resp.toFixed(4)}s (${(dd.avg_resp*1000).toFixed(1)}ms)`)}
-  </table>${evHtml}
-  <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View Dock Losses in Log Center →</button></div>`);
+  const dockletId=ds.docklet_id?`<br><span style="font-size:10px;color:var(--muted)">Docklet: ${ds.docklet_id}</span>`:'';
+  showModal(`Dock: ${ds.dock_id}`,`<table style="font-size:12px;margin-bottom:4px">
+    ${row('Dock ID',`<strong style="font-family:monospace;font-size:13px">${ds.dock_id}</strong>${dockletId}`)}
+    ${row('Total Actions',`<strong style="font-size:16px">${ds.total||'No data'}</strong>`)}
+    ${ds.total?row('Successful',`<strong style="color:var(--green)">${ds.success}</strong>`):''}
+    ${ds.total?row('Failed',`<strong style="color:var(--red);font-size:16px">${ds.failure}</strong>`):''}
+    ${ds.total?row('Reliability',`<strong style="color:${rc};font-size:16px">${relPct}%</strong>`):''}
+  </table>${actHtml}
+  ${!actions.length?'<p style="font-size:11px;color:var(--muted);padding:4px 0">Per-action breakdown available once dock logs are connected.</p>':''}`);
 }
 
 // ═══════════════════════════════════════════════════════════
 //  SECTION 6 — USAGE TAB
 // ═══════════════════════════════════════════════════════════
 function renderUsage(d){
-  const u=d.usage,hTotal=u.app+u.docklet;
+  const u=d.usage||{app:0,remote:0,docklet:0,direct:0,app_ratio:0,dock_ratio:0,scene_per_day:0};
+  const hTotal=(u.app||0)+(u.docklet||0);
   document.getElementById('usageKPIs').innerHTML=`
-    <div class="kpi" onclick="showUsageModal('auto')"><div class="label">Automation / Day</div><div class="value">${u.scene_per_day}</div><div class="formula-ref">= ${u.direct} ÷ 30 days</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="showUsageModal('app')"><div class="label">App Usage Ratio</div><div class="value">${u.app_ratio}%</div><div class="formula-ref">= ${u.app} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="showUsageModal('dock')"><div class="label">Dock Usage Ratio</div><div class="value">${u.dock_ratio}%</div><div class="formula-ref">= ${u.docklet} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>`;
+    <div class="kpi" onclick="showUsageModal('auto')"><div class="label">Automation / Day</div><div class="value">${u.scene_per_day||0}</div><div class="formula-ref">= ${u.direct||0} ÷ 30 days</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('app')"><div class="label">App Usage Ratio</div><div class="value">${u.app_ratio||0}%</div><div class="formula-ref">= ${u.app||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('dock')"><div class="label">Dock Usage Ratio</div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>`;
   const srcLabels=['App (Local)','Remote App','Dock Control','Automation'];
-  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app,u.remote,u.docklet,u.direct],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f'],borderWidth:0}]},
+  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,u.direct||0],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f'],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
       onClick:(e,els)=>{if(!els.length)return;
         const src=srcLabels[els[0].index];
         openLogCenter({hub:activeHub,tab:'all',srcFilter:src,context:{label:`${src} Events`,desc:`${activeHub.toUpperCase()} · all events from this source`}});},
       plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
-  const dt=document.getElementById('devTable');dt.innerHTML='';
-  d.devices.sort((a,b)=>b.total-a.total).forEach(dev=>{
-    const rc=relTag(dev.rel);
-    const failC=Math.round(dev.total*(100-dev.rel)/100);
-    const hasIssues=dev.rel<97;
-    dt.innerHTML+=`<tr class="clickable" onclick="showDevModal('${dev.id}','${dev.room}',${dev.total},${dev.rel},${dev.p50},${failC})">
-    <td style="font-size:10px;font-family:monospace">${dev.id.replace('light.snap_','')}</td>
-    <td>${dev.room}</td><td>${dev.total}</td>
-    <td><span class="tag ${rc}">${dev.rel}%</span></td>
-    <td style="color:${dev.p50>800?'var(--yellow)':'inherit'}">${dev.p50}ms</td>
-    <td style="font-size:10px;color:${hasIssues?'var(--blue)':'var(--muted)'}">${hasIssues?failC+' failures →':'OK'}</td></tr>`});
+
+  // Dock usage panel — populated when dock_table is connected
+  const dockUsageEl=document.getElementById('dockUsagePanel');
+  if(dockUsageEl){
+    const du=d.dock_usage||{};
+    const dockStats=(d.reliability_detail||{}).dock_stats||[];
+    if(dockStats.length){
+      const totalDockActions=dockStats.reduce((s,dk)=>s+dk.total,0);
+      const uniqueDockCount=new Set(dockStats.map(ds=>ds.dock_id)).size;
+      dockUsageEl.style.display='';
+      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px">Dock Usage</h3>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="kpi" style="flex:1;min-width:120px"><div class="label">Total Actions</div><div class="value">${totalDockActions}</div></div>
+        <div class="kpi" style="flex:1;min-width:120px"><div class="label">Active Docks</div><div class="value">${uniqueDockCount}</div></div>
+        <div class="kpi" style="flex:1;min-width:120px"><div class="label">Active Docklets</div><div class="value">${dockStats.length}</div></div>
+      </div>
+      <table style="font-size:11px;width:100%"><thead><tr>
+        <th style="text-align:left;padding:4px 8px">Dock</th><th>Total</th><th>Success</th><th>Fail</th><th>Reliability</th>
+      </tr></thead><tbody>
+      ${dockStats.map(ds=>`<tr class="clickable" onclick="showDockStatModal(${JSON.stringify(ds).replace(/"/g,'&quot;')})">
+        <td style="font-family:monospace;font-size:10px;padding:4px 8px">${ds.dock_id}</td>
+        <td style="text-align:center">${ds.total}</td>
+        <td style="text-align:center;color:var(--green)">${ds.success}</td>
+        <td style="text-align:center;color:${ds.failure>0?'var(--red)':'inherit'}">${ds.failure}</td>
+        <td style="text-align:center"><span class="tag ${relTag(ds.rel||0)}">${ds.rel}%</span></td>
+      </tr>`).join('')}
+      </tbody></table>`;
+    } else {
+      dockUsageEl.style.display='';
+      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px">Dock Usage</h3>
+      <p style="font-size:11px;color:var(--muted)">Dock usage data will appear here once dock logs are connected.</p>`;
+    }
+  }
 }
 
 window.showDevModal=function(id,room,total,rel,p50,fail){
@@ -1261,21 +1256,25 @@ window.showDevModal=function(id,room,total,rel,p50,fail){
 };
 
 window.showUsageModal=function(type){
-  const hub=activeHub,d=D[hub],u=d.usage,total=u.app+u.docklet+u.remote+u.direct,hTotal=u.app+u.docklet;
+  const hub=activeHub,d=D[hub];
+  const u=d.usage||{};
+  const app=u.app||0,docklet=u.docklet||0,remote=u.remote||0,direct=u.direct||0;
+  const total=app+docklet+remote+direct,hTotal=app+docklet;
+  const app_ratio=u.app_ratio||0,dock_ratio=u.dock_ratio||0,scene_per_day=u.scene_per_day||0;
   const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
   let title='',body='',lcOpts=null;
   if(type==='auto'){
     title='Automation / Day';
-    lcOpts={hub,tab:'all',srcFilter:'Automation',context:{label:'Automation Events',desc:`${hub.toUpperCase()} · ${u.direct} automation triggers · 30-day window`}};
-    body=`<table style="font-size:12px">${row('Formula','Automation Events ÷ 30 days')}${row('Total Automation',`<strong style="font-size:16px">${u.direct}</strong>`)}${row('Per Day',`<strong>${u.scene_per_day}</strong>`)}${row('% of All Events',`${(u.direct/total*100).toFixed(1)}%`)}</table>`;
+    lcOpts={hub,tab:'all',srcFilter:'Automation',context:{label:'Automation Events',desc:`${hub.toUpperCase()} · ${direct} automation triggers · 30-day window`}};
+    body=`<table style="font-size:12px">${row('Formula','Automation Events ÷ 30 days')}${row('Total Automation',`<strong style="font-size:16px">${direct}</strong>`)}${row('Per Day',`<strong>${scene_per_day}</strong>`)}${row('% of All Events',total>0?`${(direct/total*100).toFixed(1)}%`:'0%')}</table>`;
   } else if(type==='app'){
     title='App Usage Ratio';
-    lcOpts={hub,tab:'all',srcFilter:'App Control',context:{label:'App (Local) Events',desc:`${hub.toUpperCase()} · ${u.app} local app events · 30-day window`}};
-    body=`<table style="font-size:12px">${row('Formula','App ÷ (App + Dock)')}${row('App Events',`<strong style="font-size:16px;color:var(--blue)">${u.app}</strong>`)}${row('Dock Events',u.docklet)}${row('Ratio',`<strong style="font-size:16px;color:var(--blue)">${u.app_ratio}%</strong>`)}</table>`;
+    lcOpts={hub,tab:'all',srcFilter:'App Control',context:{label:'App (Local) Events',desc:`${hub.toUpperCase()} · ${app} local app events · 30-day window`}};
+    body=`<table style="font-size:12px">${row('Formula','App ÷ (App + Dock)')}${row('App Events',`<strong style="font-size:16px;color:var(--blue)">${app}</strong>`)}${row('Dock Events',docklet)}${row('Ratio',`<strong style="font-size:16px;color:var(--blue)">${app_ratio}%</strong>`)}</table>`;
   } else {
     title='Dock Usage Ratio';
-    lcOpts={hub,tab:'all',srcFilter:'Dock Control',context:{label:'Dock Control Events',desc:`${hub.toUpperCase()} · ${u.docklet} dock events · 30-day window`}};
-    body=`<table style="font-size:12px">${row('Formula','Dock ÷ (App + Dock)')}${row('Dock Events',`<strong style="font-size:16px;color:var(--green)">${u.docklet}</strong>`)}${row('App Events',u.app)}${row('Ratio',`<strong style="font-size:16px;color:var(--green)">${u.dock_ratio}%</strong>`)}</table>`;
+    lcOpts={hub,tab:'all',srcFilter:'Dock Control',context:{label:'Dock Control Events',desc:`${hub.toUpperCase()} · ${docklet} dock events · 30-day window`}};
+    body=`<table style="font-size:12px">${row('Formula','Dock ÷ (App + Dock)')}${row('Dock Events',`<strong style="font-size:16px;color:var(--green)">${docklet}</strong>`)}${row('App Events',app)}${row('Ratio',`<strong style="font-size:16px;color:var(--green)">${dock_ratio}%</strong>`)}</table>`;
   }
   body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${title} in Log Center →</button></div>`;
   showModal(title,body);
