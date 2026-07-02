@@ -130,10 +130,14 @@ Computed from `app_logs` for hub_id in window:
 | `app` | `COUNTIF(use_case IN ('Local App Control', 'Device Bind (App)'))` |
 | `docklet` | `COUNTIF(use_case = 'Docklet Press (App)')` |
 | `remote` | `COUNTIF(use_case = 'Remote App Control')` |
-| `direct` | `COUNTIF(use_case = 'Observed Change (App)')` |
+| `direct` (Automation) | `COUNTIF(use_case = 'Observed Change (App)' AND device_type != 'scene')` |
+| `scene` | `COUNTIF(device_type = 'scene')` |
 | `app_ratio` | `ROUND(100 × app / (app + docklet), 2)` |
 | `dock_ratio` | `ROUND(100 × docklet / (app + docklet), 2)` |
-| `scene_per_day` | `ROUND(direct / days, 2)` |
+| `auto_ratio` | `ROUND(100 × direct / total_usage, 2)` |
+| `scene_ratio` | `ROUND(100 × scene / total_usage, 2)` |
+| `auto_per_day` | `ROUND(direct / days, 2)` |
+| `scene_per_day` | `ROUND(scene / days, 2)` |
 
 ---
 

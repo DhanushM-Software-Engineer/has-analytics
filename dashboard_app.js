@@ -88,7 +88,7 @@ function renderLanding(){
   document.getElementById('fleetKPIs').innerHTML=`
     <div class="kpi"><div class="label">Total Fleet Events</div><div class="value">${fTotal.toLocaleString()}</div><div class="sub">${hubs.length} hubs · 30-day window</div></div>
     <div class="kpi" onclick="showFleetModal('reliability')"><div class="label">Fleet Reliability</div><div class="value" style="color:${relColor(fRel)}">${fRel}%</div><div class="sub">${fSuccess.toLocaleString()} success · ${fFail} failures</div></div>
-    <div class="kpi" onclick="showFleetModal('latency')"><div class="label">Avg P50 Latency</div><div class="value">${fP50}ms</div><div class="sub">Median end-to-end response</div></div>
+    <div class="kpi" onclick="showFleetModal('latency')"><div class="label">Avg P50 Speed</div><div class="value">${fP50}ms</div><div class="sub">Median end-to-end response</div></div>
     <div class="kpi" onclick="showFleetModal('northstar')"><div class="label">North Star (Sub-1s)</div><div class="value" style="color:${fNSavg>85?'var(--green)':fNSavg>70?'var(--yellow)':'var(--red)'}">${fNSavg}%</div><div class="sub">Fleet avg under-1-second rate</div></div>`;
 
   const grid=document.getElementById('hubCardsGrid');grid.innerHTML='';
@@ -116,7 +116,7 @@ function renderLanding(){
           <div class="hgc-m-sub">${failCount} failure${failCount!==1?'s':''}</div>
         </div>
         <div class="hgc-metric">
-          <div class="hgc-m-label">P50 Latency</div>
+          <div class="hgc-m-label">P50 Speed</div>
           <div class="hgc-m-value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}</div>
           <div class="hgc-m-sub">ms end-to-end</div>
         </div>
@@ -467,7 +467,7 @@ LC_SEG_COLS['remote_e2e']=LC_SEG_COLS['local_e2e']; // same columns, different c
 const DEFAULT_LC_HEAD=`<tr>
   <th style="width:22px"></th>
   <th>Timestamp</th><th>Hub</th><th>Use Case</th><th>Source</th><th>Device</th>
-  <th>Room</th><th>Latency</th><th>Status / Reason</th><th>Network</th>
+  <th>Room</th><th>Speed</th><th>Status / Reason</th><th>Network</th>
 </tr>`;
 const DEFAULT_LC_COLSPAN=10;
 
@@ -485,7 +485,7 @@ function renderLogCenter(){
     if(lcState.srcFilter)parts.push(`Source: ${lcState.srcFilter}`);
     if(lcState.ucFilter)parts.push(`Use Case: ${lcState.ucFilter}`);
     if(lcState.segFilter)parts.push(`Segment: ${lcState.segFilter}`);
-    if(lcState.latMin!==null)parts.push(`Latency: ${lcState.latMin}${lcState.latMax?'–'+lcState.latMax:'+'} ms`);
+    if(lcState.latMin!==null)parts.push(`Speed: ${lcState.latMin}${lcState.latMax?'–'+lcState.latMax:'+'} ms`);
     const desc=(lcState.context?.desc||'')+(parts.length?` · Filter — ${parts.join(' · ')}`: '');
     banner.innerHTML=`<div><div class="lc-context-label">${lcState.context?.label||'Filtered View'}</div><div class="lc-context-desc">${desc}</div></div>
       <button class="lc-context-clear" onclick="lcClearFilters()">Clear Filter</button>`;
@@ -591,7 +591,7 @@ function buildTimingExpand(ev){
     <div class="tp-fields">
       ${tpField('Timestamp',ev.ts)}${tpField('Hub',ev.hub?.toUpperCase())}${tpField('Use Case',ev.uc)}
       ${tpField('Device',ev.dev)}${tpField('Room',ev.room)}${tpField('Source',ev.src)}
-      ${tpField('Latency',ev.lat&&ev.lat!=='N/A'?ev.lat+'ms':'N/A')}${tpField('Network',ev.net)}
+      ${tpField('Speed',ev.lat&&ev.lat!=='N/A'?ev.lat+'ms':'N/A')}${tpField('Network',ev.net)}
       ${ev.dock&&ev.dock!=='—'?tpField('Dock',ev.dock):''}
       ${tpField('Failure Reason',`<span class="tag tag-red">${ev.reason||'—'}</span>`)}
     </div>`;
@@ -652,7 +652,7 @@ function buildTimingExpand(ev){
     html+=`<div class="tp-fields">
       ${tpField('Timestamp',ev.ts)}${tpField('Hub',ev.hub?.toUpperCase())}${tpField('Use Case',ev.uc)}
       ${tpField('Source',ev.src)}${tpField('Device',ev.dev)}${tpField('Room',ev.room)}
-      ${tpField('Latency',ev.lat?ev.lat+'ms':'—')}${tpField('Network',ev.net)}
+      ${tpField('Speed',ev.lat?ev.lat+'ms':'—')}${tpField('Network',ev.net)}
     </div>`;
   }
   html+='</div>';return html;
@@ -672,8 +672,9 @@ function renderDetail(hub){
   destroyCharts();const d=D[hub],f=d.total-d.success;
   document.getElementById('topKPIs').innerHTML=`
     <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[0],'overall')"><div class="label">Total Events</div><div class="value">${d.total}</div><div class="sub">Click for daily trend</div></div>
+    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label">Total Devices</div><div class="value">${d.total_devices || 0}</div><div class="sub">Active in window</div></div>
     <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label">Reliability</div><div class="value" style="color:${relColor(d.reliability)}">${d.reliability}%</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[1],'speed')"><div class="label">P50 Latency</div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div><div class="sub">Click for speed drill-down</div></div>
+    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[1],'speed')"><div class="label">P50 Speed</div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div><div class="sub">Click for speed drill-down</div></div>
     <div class="kpi" style="cursor:pointer" onclick="openLogCenter({hub:'${hub}',tab:'failures',context:{label:'${hub.toUpperCase()} — All Failures',desc:'${f} total failures in 30-day window'}})">
       <div class="label">Failures</div><div class="value" style="color:var(--red)">${f}</div>
       <div class="sub" style="color:var(--blue)">Click → Log Center</div></div>`;
@@ -690,7 +691,7 @@ function showDayDebug(hub,dayIdx,focus){
   const dayAll=pool.filter(e=>(e.ts||'').startsWith(day.date));
   const dayFails=dayAll.filter(e=>e.status==='fail');
   const dayNsMiss=dayAll.filter(e=>parseFloat(e.lat||0)>1000);
-  const cols=[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Latency'},{key:'reason',label:'Reason'}];
+  const cols=[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Speed'},{key:'reason',label:'Reason'}];
 
   const statBar=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
@@ -702,7 +703,7 @@ function showDayDebug(hub,dayIdx,focus){
       <div style="font-size:20px;font-weight:700;color:${relC}">${day.rel}%</div>
     </div>
     <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">P50 Latency</div>
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">P50 Speed</div>
       <div style="font-size:20px;font-weight:700;color:${day.p50>800?'var(--yellow)':'#e8edf5'}">${day.p50}ms</div>
     </div>
     <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
@@ -791,18 +792,18 @@ function renderOverall(d){
     hm.innerHTML+=`<div class="heatmap-label">${day.slice(0,3)}</div>`;
     for(let h=0;h<24;h++){
       const k=`${day}_${h}`,v=d.heatmap[k]||0,intensity=v/maxV;
-      const bg=intensity>0?`rgba(61,130,240,${.08+intensity*.72})`:'#0c1018';
-      const det=d.heatmap_detail[k]||{app:0,dock:0,remote:0,auto:0};
+      const bg=intensity>0?`rgba(239,83,80,${.08+intensity*.72})`:'#0c1018';
+      const det=d.heatmap_detail[k]||{events:0,failures:0,app:0,dock:0,remote:0,auto:0};
       hm.innerHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
-        onmouseover="showHeatTip(this,'${day}',${h},${v},${det.app},${det.dock},${det.remote},${det.auto})"
+        onmouseover="showHeatTip(this,'${day}',${h},${v},${det.events},${det.failures},${det.app},${det.dock},${det.remote},${det.auto})"
         onmouseout="hideHeatTip(this)"
-        onclick="openLogCenter({hub:'${activeHub}',tab:'all',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v} Events',desc:'App: ${det.app} · Dock: ${det.dock} · Remote: ${det.remote} · Auto: ${det.auto}'}})">
-        ${v||''}</div>`}});
+        onclick="openLogCenter({hub:'${activeHub}',tab:'all',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v}% Fail Rate',desc:'Events: ${det.events} · Failures: ${det.failures}'}})">
+        ${v?v+'%':''}</div>`}});
 }
 
-window.showHeatTip=function(el,day,h,v,app,dock,rem,auto){
+window.showHeatTip=function(el,day,h,v,ev,fail,app,dock,rem,auto){
   let tip=document.createElement('div');tip.className='tooltip-box';
-  tip.innerHTML=`<strong>${day} ${h}:00</strong><br>${v} events<hr style="border-color:var(--border);margin:4px 0">App: ${app} · Dock: ${dock}<br>Remote: ${rem} · Auto: ${auto}<br><span style="font-size:9px;color:var(--blue)">Click → Log Center</span>`;
+  tip.innerHTML=`<strong>${day} ${h}:00</strong><br>${v}% fail rate<hr style="border-color:var(--border);margin:4px 0">Events: ${ev} · Failures: ${fail}<br>App: ${app} · Dock: ${dock}<br>Remote: ${rem} · Auto: ${auto}<br><span style="font-size:9px;color:var(--blue)">Click → Log Center</span>`;
   el.style.position='relative';el.appendChild(tip);tip.style.position='absolute';tip.style.bottom='100%';tip.style.left='50%';tip.style.transform='translateX(-50%)'};
 window.hideHeatTip=function(el){const t=el.querySelector('.tooltip-box');if(t)t.remove()};
 
@@ -877,18 +878,18 @@ function renderSpeed(d){
         const k=bk[els[0].index],evs=s.bucket_events[k],isProblematic=k.includes('800')||k.includes('>1000')||k.includes('600');
         const row=(l,v)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0">${l}</td><td>${v}</td></tr>`;
         let body=`<table style="font-size:12px;margin-bottom:14px">
-          ${row('Latency Range',`<strong>${k}ms</strong>`)}
+          ${row('Speed Range',`<strong>${k}ms</strong>`)}
           ${row('Event Count',`<strong>${b[k]}</strong>`)}
           ${isProblematic?row('Assessment',`<span style="color:var(--red)">Above 600ms — degraded user experience</span>`):''}
         </table>`;
         if(evs&&evs.length){
           body+=`<div class="dbg-section-hdr" style="margin-bottom:8px">
             <span class="dbg-section-title">Sample Events</span>
-            <button class="dbg-lc-link" onclick="(()=>{const f=parseBucketFilter('${k}');closeModal();openLogCenter(Object.assign({hub:'${activeHub}',tab:'all',context:{label:'Latency ${k}ms — ${b[k]} events',desc:'${activeHub.toUpperCase()} · ${b[k]} events in this latency range'}},f))})()">View in Log Center →</button>
-          </div>`+evTable(evs,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'src',label:'Source'},{key:'lat',label:'Latency'},{key:'room',label:'Room'}]);
+            <button class="dbg-lc-link" onclick="(()=>{const f=parseBucketFilter('${k}');closeModal();openLogCenter(Object.assign({hub:'${activeHub}',tab:'all',context:{label:'Speed ${k}ms — ${b[k]} events',desc:'${activeHub.toUpperCase()} · ${b[k]} events in this speed range'}},f))})()">View in Log Center →</button>
+          </div>`+evTable(evs,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'src',label:'Source'},{key:'lat',label:'Speed'},{key:'room',label:'Room'}]);
         }
-        showModal(`Latency ${k}ms — ${b[k]} Events`,body)},
-      scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},x:{title:{display:true,text:'Latency Range (ms)'}}}}});
+        showModal(`Speed ${k}ms — ${b[k]} Events`,body)},
+      scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},x:{title:{display:true,text:'Speed Range (ms)'}}}}});
 
   const ucs=Object.keys(s.per_uc).sort();
   charts.ucLat=mc('ucLatChart',{type:'bar',data:{labels:ucs,datasets:[
@@ -897,7 +898,7 @@ function renderSpeed(d){
     {label:'P95',data:ucs.map(u=>s.per_uc[u].p95),backgroundColor:'#d4961f'}]},
     options:{responsive:true,maintainAspectRatio:false,
       onClick:(e,els)=>{if(!els.length)return;showUCDetail(ucs[els[0].index]);},
-      scales:{y:{title:{display:true,text:'Latency (ms)'},beginAtZero:true},x:{title:{display:true,text:'Use Case'}}}}});
+      scales:{y:{title:{display:true,text:'Speed (ms)'},beginAtZero:true},x:{title:{display:true,text:'Use Case'}}}}});
 
   const tb=document.getElementById('ucSpeedTable');tb.innerHTML='';
   ucs.forEach(u=>{
@@ -929,7 +930,7 @@ window.showUCDetail=function(uc){
   </div>
   <table style="font-size:12px;margin-bottom:14px">
     ${row('Total Events',`<strong style="font-size:16px">${v.count}</strong>`)}
-    ${row('Avg Latency',v.avg+'ms')}
+    ${row('Avg Speed',v.avg+'ms')}
     ${row('P50 (median)',`<strong style="font-size:16px;color:#e8edf5">${v.p50}ms</strong>`)}
     ${row('P95',`<span style="color:${v.p95>1000?'var(--red)':v.p95>500?'var(--yellow)':'var(--green)'}">${v.p95}ms${v.p95>1000?' — CRITICAL':v.p95>500?' — WARNING':''}</span>`)}
   </table>`;
@@ -937,7 +938,7 @@ window.showUCDetail=function(uc){
     body+=`<div class="dbg-section-hdr" style="margin-bottom:8px">
       <span class="dbg-section-title">Sample Events (${v.events.length} of ${v.count})</span>
       <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all ${uc} in Log Center →</button>
-    </div>`+evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'lat',label:'Latency (ms)'},{key:'src',label:'Source'},{key:'room',label:'Room'}]);
+    </div>`+evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'lat',label:'Speed (ms)'},{key:'src',label:'Source'},{key:'room',label:'Room'}]);
   } else {
     body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${uc} events in Log Center →</button></div>`;
   }
@@ -997,14 +998,30 @@ function renderReliability(d){
     <td><span class="tag tag-red">${reason}</span></td><td style="font-weight:600;color:var(--red)">${v.count}</td>
     <td style="color:var(--blue);font-size:10px">Inspect events →</td></tr>`})}
 
-  const fdt=document.getElementById('failDevTable');fdt.innerHTML='';
-  if(d.fail_by_device){Object.entries(d.fail_by_device).sort((a,b)=>b[1].count-a[1].count).forEach(([dev,v])=>{
-    const reasons=Object.entries(v.reasons).map(([r,c])=>`${r}:${c}`).join(', ');
-    fdt.innerHTML+=`<tr class="clickable" onclick="showDevFailModal('${dev}',${v.count},'${reasons}')">
-    <td style="font-family:monospace;font-size:10px">${dev}</td>
-    <td style="font-weight:600;color:var(--red)">${v.count}</td>
-    <td style="font-size:10px;color:var(--muted)">${reasons}</td>
-    <td style="font-size:10px;color:var(--blue)">Inspect →</td></tr>`})}
+  const fdt=document.getElementById('failDevTable');
+  const fdtHead=fdt.previousElementSibling;
+  fdt.innerHTML='';
+  if(d.fail_by_device){
+    const reasonsArray = ['DEVICE_OFFLINE', 'NO_RESPONSE', 'THREAD_MESH_FAIL', 'TIMEOUT'];
+    
+    let thHTML = `<tr><th>Device</th><th>Count</th>`;
+    reasonsArray.forEach(r => thHTML += `<th>${r}</th>`);
+    thHTML += `<th>Action</th></tr>`;
+    if(fdtHead) fdtHead.innerHTML = thHTML;
+
+    Object.entries(d.fail_by_device).sort((a,b)=>b[1].count-a[1].count).forEach(([dev,v])=>{
+      const reasonsStr=Object.entries(v.reasons).map(([r,c])=>`${r}:${c}`).join(', ');
+      let tdHTML = `<tr class="clickable" onclick="showDevFailModal('${dev}',${v.count},'${reasonsStr}')">
+      <td style="font-family:monospace;font-size:10px">${dev}</td>
+      <td style="font-weight:600;color:var(--red)">${v.count}</td>`;
+      reasonsArray.forEach(r => {
+        const c = v.reasons[r] || 0;
+        tdHTML += `<td style="font-size:10px;color:var(--muted)">${c > 0 ? c : '-'}</td>`;
+      });
+      tdHTML += `<td style="font-size:10px;color:var(--blue)">Inspect →</td></tr>`;
+      fdt.innerHTML += tdHTML;
+    });
+  }
 
 }
 
@@ -1027,7 +1044,7 @@ window.showSrcRelModal=function(src,total,success,fail,rel){
         <span class="dbg-section-title">Failure Events for ${src} (${fails.length})</span>
         <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all in Log Center →</button>
       </div>
-      ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}
+      ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}
       ${fails.length>10?`<p style="font-size:10px;color:var(--muted);margin-top:6px">Showing 10 of ${fails.length}.</p>`:''}
     </div>`;
   } else {
@@ -1053,7 +1070,7 @@ window.showReasonModal=function(reason,count){
         <span class="dbg-section-title">Events with this failure (${v.events.length} samples)</span>
         <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all in Log Center →</button>
       </div>
-      ${evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Latency'}])}
+      ${evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Speed'}])}
     </div>`;
   }
   showModal(`${reason} — Failure Analysis`,body);
@@ -1074,7 +1091,7 @@ window.showDevFailModal=function(dev,count,reasons){
       <span class="dbg-section-title">Failure Events (${fails.length})</span>
       <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all in Log Center →</button>
     </div>
-    ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}
+    ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}
     ${fails.length>10?`<p style="font-size:10px;color:var(--muted);margin-top:6px">Showing 10 of ${fails.length}.</p>`:''}
   </div>`;
   showModal(`Device Failures — ${dev.replace('light.snap_','').replace('switch.snap_','')}`,body);
@@ -1091,7 +1108,7 @@ window.showFailModal=function(idx){
     ${row('Timestamp',`<span style="font-family:monospace">${f.ts}</span>`)}
     ${row('Use Case',f.uc)}${row('Device',`<span style="font-family:monospace">${f.dev}</span>`)}
     ${row('Room',f.room)}${row('Source',f.src)}${row('Network',f.net||'—')}
-    ${row('Latency',f.lat&&f.lat!=='N/A'?`<span style="color:var(--red);font-weight:600">${f.lat}ms</span>`:'N/A')}
+    ${row('Speed',f.lat&&f.lat!=='N/A'?`<span style="color:var(--red);font-weight:600">${f.lat}ms</span>`:'N/A')}
     ${f.dock&&f.dock!=='—'?row('Dock',f.dock):''}
   </table>
   <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all ${f.reason} failures in Log Center →</button></div>`;
@@ -1117,7 +1134,7 @@ function showRelModal(type){
     <div class="dbg-section"><div class="dbg-section-hdr">
       <span class="dbg-section-title">App Failure Events (${fails.length})</span>
       <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View in Log Center →</button>
-    </div>${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}</div>`;
+    </div>${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}</div>`;
 
   } else if(type==='dock_trigger'){
     title='Dock Trigger Reliability — Debug';
@@ -1185,11 +1202,12 @@ function renderUsage(d){
   const u=d.usage||{app:0,remote:0,docklet:0,direct:0,app_ratio:0,dock_ratio:0,scene_per_day:0};
   const hTotal=(u.app||0)+(u.docklet||0);
   document.getElementById('usageKPIs').innerHTML=`
-    <div class="kpi" onclick="showUsageModal('auto')"><div class="label">Automation / Day</div><div class="value">${u.scene_per_day||0}</div><div class="formula-ref">= ${u.direct||0} ÷ 30 days</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('auto')"><div class="label">Automation / Day</div><div class="value">${u.auto_per_day||0}</div><div class="formula-ref">= ${u.direct||0} ÷ 30 days</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('scene')"><div class="label">Scene / Day</div><div class="value">${u.scene_per_day||0}</div><div class="formula-ref">= ${u.scene||0} ÷ 30 days</div><div class="sub">Click for breakdown</div></div>
     <div class="kpi" onclick="showUsageModal('app')"><div class="label">App Usage Ratio</div><div class="value">${u.app_ratio||0}%</div><div class="formula-ref">= ${u.app||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
     <div class="kpi" onclick="showUsageModal('dock')"><div class="label">Dock Usage Ratio</div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>`;
-  const srcLabels=['App (Local)','Remote App','Dock Control','Automation'];
-  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,u.direct||0],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f'],borderWidth:0}]},
+  const srcLabels=['App (Local)','Remote App','Dock Control','Automation', 'Scene'];
+  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,u.direct||0, u.scene||0],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f', '#e65c00'],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
       onClick:(e,els)=>{if(!els.length)return;
         const src=srcLabels[els[0].index];
@@ -1238,7 +1256,7 @@ window.showDevModal=function(id,room,total,rel,p50,fail){
   let body=`<table style="font-size:12px;margin-bottom:4px">
     ${row('Device',`<strong style="font-family:monospace">${id}</strong>`)}${row('Room',room)}
     ${row('Total Events',total)}${row('Reliability',`<strong style="color:${relColor(rel)};font-size:16px">${rel}%</strong>`)}
-    ${row('P50 Latency',`<span style="color:${p50>800?'var(--yellow)':'#e8edf5'}">${p50}ms</span>`)}
+    ${row('P50 Speed',`<span style="color:${p50>800?'var(--yellow)':'#e8edf5'}">${p50}ms</span>`)}
     ${row('Failures',`<strong style="color:var(--red);font-size:16px">${fail}</strong>`)}
   </table>`;
   if(fail>0){
@@ -1247,7 +1265,7 @@ window.showDevModal=function(id,room,total,rel,p50,fail){
         <span class="dbg-section-title">Failure Events (${fails.length})</span>
         <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View in Log Center →</button>
       </div>
-      ${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}
+      ${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}
     </div>`;
   } else {
     body+=`<div class="dbg-section"><div class="dbg-empty">No failures recorded for this device.</div></div>`;
@@ -1316,11 +1334,11 @@ function showFleetModal(type){
     <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter({tab:'failures',context:{label:'All Fleet Failures',desc:'${fFail} failures across all hubs'}})">View All Fleet Failures →</button></div>`;
 
   } else if(type==='latency'){
-    title='Fleet P50 Latency — Debug View';
+    title='Fleet P50 Speed — Debug View';
     body=`<table style="font-size:12px;margin-bottom:4px">
       ${row('Fleet Avg P50',`<strong style="font-size:18px">${fP50}ms</strong>`)}
     </table>
-    <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub Latency</span></div>
+    <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub Speed</span></div>
     <table style="font-size:11px"><thead><tr><th>Hub</th><th>P50</th><th>Status</th><th>Action</th></tr></thead><tbody>
     ${fLatencies.map(l=>{const isSlow=l.p50>800;
       return`<tr><td><strong>${l.hub.toUpperCase()}</strong></td>
