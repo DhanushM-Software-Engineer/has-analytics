@@ -144,7 +144,8 @@ def hub_detail(hub_id: str, days: int = Query(default=30, ge=1, le=90)):
     # ── Top-level KPIs ────────────────────────────────────────────────────
     kpi = q(f"""
         SELECT COUNT(*) AS total, COUNTIF(success) AS success,
-               ROUND(100*COUNTIF(success)/COUNT(*),2) AS reliability
+               ROUND(100*COUNTIF(success)/COUNT(*),2) AS reliability,
+               COUNT(DISTINCT entity_id) AS total_devices
         FROM {AL}
         WHERE hub_id=@hub_id
           AND DATE(event_timestamp)>=DATE_SUB(CURRENT_DATE(),INTERVAL @days DAY)
@@ -280,6 +281,7 @@ def hub_detail(hub_id: str, days: int = Query(default=30, ge=1, le=90)):
     # ── Heatmap ─────────────────────────────────────────────────────────
     heat_rows = q(f"""
         SELECT day_of_week, hour, COUNT(*) AS events,
+               COUNTIF(success = false) AS failures,
                COUNTIF(use_case IN ('Local App Control','Device Bind (App)')) AS app,
                COUNTIF(use_case='Docklet Press (App)')    AS dock,
                COUNTIF(use_case='Remote App Control')     AS remote,
@@ -292,8 +294,11 @@ def hub_detail(hub_id: str, days: int = Query(default=30, ge=1, le=90)):
     heatmap, heatmap_detail = {}, {}
     for r in heat_rows:
         k = f"{r['day_of_week']}_{r['hour']}"
-        heatmap[k] = r["events"]
-        heatmap_detail[k] = {"app":r["app"],"dock":r["dock"],
+        events = r["events"]
+        failures = r["failures"]
+        fail_rate = round(100.0 * failures / events, 1) if events > 0 else 0
+        heatmap[k] = fail_rate
+        heatmap_detail[k] = {"events":events, "failures":failures, "app":r["app"],"dock":r["dock"],
                               "remote":r["remote"],"auto":r["auto"]}
 
     # ── Failures ────────────────────────────────────────────────────────
@@ -387,7 +392,8 @@ def hub_detail(hub_id: str, days: int = Query(default=30, ge=1, le=90)):
             COUNTIF(use_case IN ('Local App Control','Device Bind (App)')) AS app,
             COUNTIF(use_case='Docklet Press (App)') AS docklet,
             COUNTIF(use_case='Remote App Control')  AS remote,
-            COUNTIF(use_case='Observed Change (App)') AS direct
+            COUNTIF(use_case='Observed Change (App)' AND IFNULL(device_type, '') != 'scene') AS direct,
+            COUNTIF(IFNULL(device_type, '') = 'scene') AS scene
         FROM {AL}
         WHERE hub_id=@hub_id
           AND DATE(event_timestamp)>=DATE_SUB(CURRENT_DATE(),INTERVAL @days DAY)
@@ -397,21 +403,28 @@ def hub_detail(hub_id: str, days: int = Query(default=30, ge=1, le=90)):
     docklet_cnt = int(ur.get("docklet", 0) or 0)
     remote_cnt  = int(ur.get("remote",  0) or 0)
     direct_cnt  = int(ur.get("direct",  0) or 0)
+    scene_cnt   = int(ur.get("scene",   0) or 0)
     h_total = app_cnt + docklet_cnt
+    t_total = app_cnt + docklet_cnt + remote_cnt + direct_cnt + scene_cnt
     usage = {
         "app":          app_cnt,
         "docklet":      docklet_cnt,
         "remote":       remote_cnt,
         "direct":       direct_cnt,
+        "scene":        scene_cnt,
         "app_ratio":    round(100 * app_cnt     / h_total, 2) if h_total else 0,
         "dock_ratio":   round(100 * docklet_cnt / h_total, 2) if h_total else 0,
-        "scene_per_day": round(direct_cnt / days, 2),
+        "scene_ratio":  round(100 * scene_cnt   / t_total, 2) if t_total else 0,
+        "auto_ratio":   round(100 * direct_cnt  / t_total, 2) if t_total else 0,
+        "auto_per_day": round(direct_cnt / days, 2),
+        "scene_per_day":round(scene_cnt / days, 2),
     }
 
     return {
         "total":       kpi["total"],
         "success":     kpi["success"],
         "reliability": kpi["reliability"],
+        "total_devices": kpi["total_devices"],
         "speed": {
             "hub_snap_hub": {**hs_kpi, "events": hs_events},
             "local_e2e":    {**le_kpi, "events": le_events},
