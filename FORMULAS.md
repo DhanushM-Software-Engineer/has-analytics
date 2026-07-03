@@ -2,7 +2,8 @@
 
 All formulas are computed in `analytics-api/main.py` from BigQuery tables
 `schnell_analytics.app_logs` (app-initiated events) and
-`schnell_analytics.ha_logs` (Home Assistant processing events).
+`schnell_analytics.ha_logs` (Home Assistant processing events), plus
+`dock_data.xlsx` for dock hardware stats.
 Dashboard JS reads the output of `GET /api/hub/{hub_id}?days=30`.
 
 ---
@@ -24,7 +25,7 @@ Full round-trip: App tap → REST to Hub → SNAP device activates → WebSocket
 
 | Metric | Formula |
 |--------|---------|
-| avg | `AVG(latency_ms)` for hub_id, days window |
+| avg | `ROUND(AVG(latency_ms))` |
 | p50 | `APPROX_QUANTILES(latency_ms, 100)[OFFSET(50)]` |
 | p95 | `APPROX_QUANTILES(latency_ms, 100)[OFFSET(95)]` |
 
@@ -35,9 +36,21 @@ Hub issues Matter command over Thread mesh → SNAP device activates → state r
 |--------|---------|
 | avg / p50 / p95 | Same quantile formula on `ha_processing_latency_ms` from ha_logs |
 
-### Hub → App (`speed.hub_app`)
-State confirmed at hub (snap_ts) → WebSocket push → App reflects state.
-Currently returns `p50` derived from `hs_kpi.p50` as an approximation (no dedicated field yet).
+### Hub → App (`speed.hub_app`) — WebSocket Push
+State confirmed at hub (`snap_state_change_ts`) → hub pushes via WebSocket → app reflects new state.
+
+| Metric | How it's computed |
+|--------|------------------|
+| P50 (server) | Approximated as `hub_snap_hub.p50` (no dedicated field yet) |
+| Per-event (client) | `ws_confirmation_ts − rest_response_ts` derived from each `local_e2e` event |
+
+### Remote E2E (`speed.remote_e2e`)
+Full round-trip via the internet: App sends cmd remotely → Hub receives → SNAP activates → state pushed back to app.
+Same AVG / P50 / P95 formulas as Local E2E, scoped to `use_case = 'Remote App Control'`.
+*(Currently returns 0,0,0 — computed once remote events are available.)*
+
+### Per Use-Case Speed (`speed.per_uc`)
+Same AVG / P50 / P95 formulas on `latency_ms`, grouped by `use_case`.
 
 ---
 
@@ -68,16 +81,14 @@ Per-day aggregation from `app_logs` grouped by `date`:
 
 ---
 
-## Heatmap
+## Activity Heatmap
 
-Grouped from `app_logs` by `day_of_week` (e.g. "Monday") and `hour` (0–23).
-Key format: `"Monday_14"`.
+From `app_logs`, grouped by `day_of_week` × `hour`. Key format: `"Monday_14"`.
 
 | Field | Formula |
 |-------|---------|
-| `events` | `COUNT(*)` |
+| `events` | `COUNT(*)` — all use cases |
 | `app` | `COUNTIF(use_case IN ('Local App Control', 'Device Bind (App)'))` |
-| `dock` | `COUNTIF(use_case = 'Docklet Press (App)')` |
 | `remote` | `COUNTIF(use_case = 'Remote App Control')` |
 | `auto` | `COUNTIF(use_case = 'Observed Change (App)')` |
 
@@ -85,27 +96,48 @@ Key format: `"Monday_14"`.
 
 ## Reliability Detail
 
-### App Trigger Feedback (`reliability_detail.app_trigger_feedback`)
+### App Trigger → Feedback (`reliability_detail.app_trigger_feedback`)
 Formula: **App Feedbacks ÷ App Triggers**
 
 | Field | Definition |
 |-------|-----------|
-| `app_triggers` | COUNT of rows where use_case IN ('Local App Control', 'Device Bind (App)', 'Remote App Control') |
+| `app_triggers` | COUNT of rows where use_case contains "App Control" (Local + Remote) |
 | `app_feedbacks` | COUNT of those rows where success = true |
 | `app_trigger_feedback` | `ROUND(100 × app_feedbacks / app_triggers, 2)` |
 
-### Dock Trigger Reliability (`reliability_detail.dock_trigger_feedback`)
-Formula: **Dock Feedbacks ÷ Dock Triggers**
+### Dock Trigger → Feedback (`reliability_detail.dock_trigger_feedback`)
+Formula: **Dock Successes ÷ Total Dock Actions** — sourced from `dock_data.xlsx`, not app_logs.
 
 | Field | Definition |
 |-------|-----------|
-| `dock_triggers` | COUNT of rows where use_case LIKE '%Docklet%' |
-| `dock_feedbacks` | COUNT of those rows where success = true |
-| `dock_trigger_feedback` | `ROUND(100 × dock_feedbacks / dock_triggers, 2)` |
+| Numerator | `sum(success_count)` across all docklets for this hub in the days window |
+| Denominator | `sum(total_action_count)` same scope |
+| `dock_trigger_feedback` | `ROUND(100 × numerator / denominator, 2)` |
+
+Dashboard display: `dockRel = sum(dock_stats[].success) / sum(dock_stats[].total) × 100`
+
+### Dock → Hub Transit (`reliability_detail.dock_to_hub`)
+Formula: **Dock events that reached HA ÷ Total physical dock presses**
+Measures what percentage of physical button presses successfully traversed the Thread mesh and were processed by Home Assistant.
+
+| Field | Definition |
+|-------|-----------|
+| Numerator | `COUNT(*)` from ha_logs WHERE `dock_id IS NOT NULL` for this hub in window |
+| Denominator | `sum(total_action_count)` from `dock_data.xlsx` for this hub |
+| `dock_to_hub` | `ROUND(100 × numerator / denominator, 2)` |
+
+### Hub → App Confirm (`reliability_detail.hub_to_app`)
+Formula: **App Feedbacks ÷ Hub → SNAP Commands**
+Measures how many HA-issued SNAP commands ultimately resulted in confirmed app feedback.
+
+| Field | Definition |
+|-------|-----------|
+| Numerator | `app_feedbacks` (successful app-triggered events from app_logs) |
+| Denominator | `hub_to_snap_count` = `COUNT(*)` from ha_logs for this hub in window |
+| `hub_to_app` | `ROUND(100 × app_feedbacks / hub_to_snap_count, 2)` |
 
 ### Hub → SNAP Count
 `hub_to_snap_count` = `COUNT(*)` from ha_logs for hub_id in window.
-Used by hub→app formula: **App Feedbacks ÷ Hub SNAP Commands** (KPI removed from UI; field kept for reference).
 
 ### Per-Source Reliability (`reliability_detail.src_rel`)
 Grouped by `use_case`:
@@ -113,11 +145,16 @@ Grouped by `use_case`:
 - `rel` = `ROUND(100 × success / total, 2)`
 
 ### Dock Stats (`reliability_detail.dock_stats`)
-Sourced from `dock_data.xlsx` (not BigQuery). Mapped to hub via `ha_logs.dock_id`.
-Per docklet:
-- `total` / `success` / `failure` = sum of xlsx columns `total_action_count` / `success_count` / `failure_count`
-- `rel` = `ROUND(100 × success / total, 2)`
-- `actions[]` = per-action breakdown with same fields
+Sourced from `dock_data.xlsx` (not BigQuery). Linked to hub via `ha_logs.dock_id`.
+Grouped by `dock_id` — one entry per physical dock:
+
+| Field | Formula |
+|-------|---------|
+| `total` | Sum of `total_action_count` across all docklets in the dock |
+| `success` | Sum of `success_count` |
+| `failure` | Sum of `failure_count` |
+| `rel` | `ROUND(100 × success / total, 2)` |
+| `docklets[]` | Per-docklet breakdown with the same fields + `actions[]` per action type |
 
 ---
 
@@ -128,7 +165,6 @@ Computed from `app_logs` for hub_id in window:
 | Field | Formula |
 |-------|---------|
 | `app` | `COUNTIF(use_case IN ('Local App Control', 'Device Bind (App)'))` |
-| `docklet` | `COUNTIF(use_case = 'Docklet Press (App)')` |
 | `remote` | `COUNTIF(use_case = 'Remote App Control')` |
 | `direct` (Automation) | `COUNTIF(use_case = 'Observed Change (App)' AND device_type != 'scene')` |
 | `scene` | `COUNTIF(device_type = 'scene')` |
@@ -138,6 +174,10 @@ Computed from `app_logs` for hub_id in window:
 | `scene_ratio` | `ROUND(100 × scene / total_usage, 2)` |
 | `auto_per_day` | `ROUND(direct / days, 2)` |
 | `scene_per_day` | `ROUND(scene / days, 2)` |
+
+> There is no `Docklet Press (App)` use case. Dock button presses are observed by
+> the app as `Observed Change (App)`. Physical dock press counts come from
+> `dock_data.xlsx` via the Dock Stats and Dock Usage sections below.
 
 ---
 
@@ -154,21 +194,36 @@ Sourced from `dock_data.xlsx`. Aggregated from rows filtered to this hub:
 
 ---
 
+## Device Activity
+
+From `app_logs`, grouped by `entity_id`. Top 50 devices by total event count.
+
+| Field | Formula |
+|-------|---------|
+| `total` | `COUNT(*)` |
+| `success` | `COUNTIF(success = true)` |
+| `rel` | `ROUND(100 × success / total, 2)` |
+| `p50` | `APPROX_QUANTILES(latency_ms, 100 IGNORE NULLS)[OFFSET(50)]` |
+
+---
+
 ## Failures
 
 ### All Failures (`failures[]`)
-Last 100 failed events from `app_logs` WHERE success = false, ordered by event_timestamp DESC.
+Last 100 failed events from `app_logs` WHERE `success = false`, ordered by `event_timestamp DESC`.
 
 ### Failures by Reason (`fail_by_reason`)
-Grouped from `app_logs` WHERE success = false AND failure_reason IS NOT NULL:
+Grouped from `app_logs` WHERE `success = false AND failure_reason IS NOT NULL`:
 
 | Field | Formula |
 |-------|---------|
 | `count` | `COUNT(*)` per `failure_reason` |
-| `events[]` | Sample events for that reason (up to 300 most recent, shared across all reasons) |
+| `events[]` | Up to 300 most recent sample events across all reasons |
+
+Known failure reason values: `TIMEOUT`, `NO_RESPONSE`, `DEVICE_OFFLINE`, `THREAD_MESH_FAIL`
 
 ### Failures by Device (`fail_by_device`)
-Grouped from `app_logs` WHERE success = false, by entity_id + failure_reason:
+Grouped from `app_logs` WHERE `success = false`, by `entity_id` + `failure_reason`:
 
 | Field | Formula |
 |-------|---------|
@@ -179,16 +234,16 @@ Grouped from `app_logs` WHERE success = false, by entity_id + failure_reason:
 
 ## North Star (Sub-1s Rate)
 
-`ns` = percentage of events with `latency_ms < 1000`, computed per day.
+`ns` = percentage of events with `latency_ms < 1 000`, computed per day.
 Fleet-level = average of all hubs' daily `ns` values.
 Target: ≥ 85%.
 
 ---
 
-## Reliability Thresholds (UI color coding)
+## Reliability Thresholds (UI colour coding)
 
-| Range | Color |
-|-------|-------|
+| Range | Colour |
+|-------|--------|
 | > 97% | Green |
 | 93%–97% | Yellow |
 | < 93% | Red |

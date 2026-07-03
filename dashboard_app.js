@@ -2,7 +2,45 @@
 //  SCHNELL FLEET DEBUGGING DASHBOARD
 // ═══════════════════════════════════════════════════════════
 const D={};
-let charts={},activeHub=null;
+let charts={},activeHub=null,_dockSortAsc=false,_lastDockStats=[],activeFrom='',activeTo='';
+
+const TARGETS={
+  reliability: {val:97,   dir:'gte', lbl:'≥97%'},
+  northStar:   {val:85,   dir:'gte', lbl:'≥85%'},
+  p50Local:    {val:1000, dir:'lte', lbl:'<1000ms'},
+  hubSnap:     {val:300,  dir:'lte', lbl:'<300ms'},
+  hubApp:      {val:200,  dir:'lte', lbl:'<200ms'},
+  localE2e:    {val:1000, dir:'lte', lbl:'<1000ms'},
+  remoteE2e:   {val:3000, dir:'lte', lbl:'<3000ms'},
+  dockRel:     {val:97,   dir:'gte', lbl:'≥97%'},
+  appTrigger:  {val:97,   dir:'gte', lbl:'≥97%'},
+};
+function tgtLine(actual,t){
+  const met=t.dir==='gte'?actual>=t.val:actual<=t.val;
+  return `<span style="font-size:9px;color:${met?'var(--green)':'var(--red)'}">Target ${t.lbl}</span>`;
+}
+function _defaultDates(){const now=new Date(),pad=n=>String(n).padStart(2,'0'),fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;activeTo=fmt(now);const f=new Date(now);f.setDate(f.getDate()-30);activeFrom=fmt(f);}
+function activeDaysCount(){if(!activeFrom||!activeTo)return 30;return Math.round((new Date(activeTo)-new Date(activeFrom))/864e5)+1;}
+function activePeriodLabel(){if(!activeFrom||!activeTo)return'30-day window';const fmt=s=>{const[y,m,d]=s.split('-');return`${m}/${d}/${y.slice(2)}`};return`${fmt(activeFrom)}–${fmt(activeTo)}`;}
+async function fetchAllHubs(showLoading){
+  if(showLoading){const s=document.getElementById('drStatus');if(s){s.textContent='Loading…';s.style.color='var(--blue)';}}
+  const{hubs}=await fetch('/api/hubs').then(r=>r.json());
+  await Promise.all(hubs.map(async h=>{D[h]=await fetch(`/api/hub/${h}?from_date=${activeFrom}&to_date=${activeTo}`).then(r=>r.json())}));
+  const s=document.getElementById('drStatus');if(s){s.textContent='';s.style.color='';}
+  const lbl=document.getElementById('headerPeriodLabel');if(lbl)lbl.textContent=activePeriodLabel();
+  document.getElementById('hubCount').textContent=Object.keys(D).length;
+  return hubs;
+}
+window.applyDateRange=async function(){
+  const f=document.getElementById('drFrom'),t=document.getElementById('drTo');
+  if(!f||!t||!f.value||!t.value)return;
+  const fd=new Date(f.value),td=new Date(t.value);
+  if(fd>td){alert('Start date must be before end date.');return;}
+  if((td-fd)/864e5>90){alert('Maximum range is 90 days.');return;}
+  activeFrom=f.value;activeTo=t.value;
+  await fetchAllHubs(true);
+  if(activeHub)renderDetail(activeHub);else renderLanding();
+};
 document.getElementById('hubCount').textContent=Object.keys(D).length;
 Chart.defaults.color='#5a7090';Chart.defaults.borderColor='#1d2d40';
 Chart.defaults.font.family='Inter';Chart.defaults.font.size=10;
@@ -63,6 +101,8 @@ function setNav(active){
 //  SECTION 1 — LANDING VIEW
 // ═══════════════════════════════════════════════════════════
 function renderLanding(){
+  const _drF=document.getElementById('drFrom'),_drT=document.getElementById('drTo');
+  if(_drF&&activeFrom)_drF.value=activeFrom;if(_drT&&activeTo)_drT.value=activeTo;
   document.getElementById('landingView').style.display='block';
   document.getElementById('detailView').style.display='none';
   document.getElementById('logCenterView').style.display='none';
@@ -86,10 +126,10 @@ function renderLanding(){
   else{badge.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite"></span><span style="color:var(--green)">All Systems Operational</span>';badge.style.borderColor='var(--green)'}
 
   document.getElementById('fleetKPIs').innerHTML=`
-    <div class="kpi"><div class="label">Total Fleet Events</div><div class="value">${fTotal.toLocaleString()}</div><div class="sub">${hubs.length} hubs · 30-day window</div></div>
-    <div class="kpi" onclick="showFleetModal('reliability')"><div class="label">Fleet Reliability</div><div class="value" style="color:${relColor(fRel)}">${fRel}%</div><div class="sub">${fSuccess.toLocaleString()} success · ${fFail} failures</div></div>
-    <div class="kpi" onclick="showFleetModal('latency')"><div class="label">Avg P50 Speed</div><div class="value">${fP50}ms</div><div class="sub">Median end-to-end response</div></div>
-    <div class="kpi" onclick="showFleetModal('northstar')"><div class="label">North Star (Sub-1s)</div><div class="value" style="color:${fNSavg>85?'var(--green)':fNSavg>70?'var(--yellow)':'var(--red)'}">${fNSavg}%</div><div class="sub">Fleet avg under-1-second rate</div></div>`;
+    <div class="kpi"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Total Fleet Events<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_total')">ⓘ</button></div><div class="value">${fTotal.toLocaleString()}</div><div class="sub">${hubs.length} hubs · ${activePeriodLabel()}</div></div>
+    <div class="kpi" onclick="showFleetModal('reliability')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Fleet Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_reliability')">ⓘ</button></div><div class="value" style="color:${relColor(fRel)}">${fRel}%</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">${fSuccess.toLocaleString()} success · ${fFail} failures</span>${tgtLine(parseFloat(fRel),TARGETS.reliability)}</div></div>
+    <div class="kpi" onclick="showFleetModal('latency')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Avg P50 Speed<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_latency')">ⓘ</button></div><div class="value">${fP50}ms</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Median end-to-end response</span>${tgtLine(fP50,TARGETS.p50Local)}</div></div>
+    <div class="kpi" onclick="showFleetModal('northstar')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">North Star (Sub-1s)<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_northstar')">ⓘ</button></div><div class="value" style="color:${fNSavg>85?'var(--green)':fNSavg>70?'var(--yellow)':'var(--red)'}">${fNSavg}%</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Fleet avg under-1-second rate</span>${tgtLine(parseFloat(fNSavg),TARGETS.northStar)}</div></div>`;
 
   const grid=document.getElementById('hubCardsGrid');grid.innerHTML='';
   hubs.forEach(h=>{
@@ -113,17 +153,17 @@ function renderLanding(){
         <div class="hgc-metric">
           <div class="hgc-m-label">Reliability</div>
           <div class="hgc-m-value" style="color:${rc}">${d.reliability}%</div>
-          <div class="hgc-m-sub">${failCount} failure${failCount!==1?'s':''}</div>
+          <div style="display:flex;justify-content:space-between;gap:4px;margin-top:3px"><span class="hgc-m-sub">${failCount} fail</span>${tgtLine(d.reliability,TARGETS.reliability)}</div>
         </div>
         <div class="hgc-metric">
           <div class="hgc-m-label">P50 Speed</div>
-          <div class="hgc-m-value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}</div>
-          <div class="hgc-m-sub">ms end-to-end</div>
+          <div class="hgc-m-value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div>
+          <div style="display:flex;justify-content:space-between;gap:4px;margin-top:3px"><span class="hgc-m-sub">end-to-end</span>${tgtLine(d.speed.local_e2e.p50,TARGETS.p50Local)}</div>
         </div>
         <div class="hgc-metric">
           <div class="hgc-m-label">Total Events</div>
           <div class="hgc-m-value" style="color:#e8edf5">${d.total.toLocaleString()}</div>
-          <div class="hgc-m-sub">30-day window</div>
+          <div class="hgc-m-sub">${activePeriodLabel()}</div>
         </div>
       </div>
       <div class="hgc-footer">View detailed analytics →</div>`;
@@ -503,7 +543,7 @@ function renderLogCenter(){
   summary.innerHTML=`<span class="lc-cnt">${events.length}</span> events shown`+
     (failCnt>0?` · <span class="lc-cnt-r">${failCnt} failure${failCnt!==1?'s':''}</span>`:'')+
     (slowCnt>0&&lcState.tab!=='slow'?` · <span class="lc-cnt-y">${slowCnt} slow</span>`:'')+
-    ` · ${lcState.hub?lcState.hub.toUpperCase():'All Hubs'} · 30-day window`;
+    ` · ${lcState.hub?lcState.hub.toUpperCase():'All Hubs'} · ${activePeriodLabel()}`;
 
   if(!events.length){body.innerHTML='';empty.style.display='block';return}
   empty.style.display='none';body.innerHTML='';
@@ -645,7 +685,7 @@ function buildTimingExpand(ev){
       <strong style="color:#e8edf5">Flow:</strong> Hub issues Matter command → Thread mesh transit → SNAP device activates → State change reflected back to hub<br>
       <strong>Hub→Thread Mesh (${s1!==null?s1+'ms':'—'}):</strong> Hub dispatches Matter protocol command<br>
       <strong>Device Activates (${s2!==null?s2+'ms':'—'}):</strong> SNAP device receives, activates, and reflects state back to hub<br>
-      <strong style="color:var(--blue)">After this point:</strong> Hub immediately pushes state to app via WebSocket (~${ev.hub&&D[ev.hub]?D[ev.hub].speed.hub_app.p50:48}ms average)
+      <strong style="color:var(--blue)">After this point:</strong> Hub immediately pushes state to app via WebSocket (~${ev.hub&&D[ev.hub]&&D[ev.hub].speed.hub_app.p50?D[ev.hub].speed.hub_app.p50+'ms':'—'} average)
     </div>
     <div class="tp-fields" style="margin-top:10px">${tpField('Device',ev.dev)}${tpField('Room',ev.room)}${tpField('Use Case',ev.uc)}</div>`;
   } else {
@@ -670,14 +710,22 @@ function tpSeg(ms,label,status){
 // ═══════════════════════════════════════════════════════════
 function renderDetail(hub){
   destroyCharts();const d=D[hub],f=d.total-d.success;
-  document.getElementById('topKPIs').innerHTML=`
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[0],'overall')"><div class="label">Total Events</div><div class="value">${d.total}</div><div class="sub">Click for daily trend</div></div>
+  const nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
+  const nsC=parseFloat(nsAvg)>=85?'var(--green)':parseFloat(nsAvg)>=70?'var(--yellow)':'var(--red)';
+  const kpiEl=document.getElementById('topKPIs');
+  kpiEl.style.gridTemplateColumns='repeat(6,1fr)';
+  kpiEl.innerHTML=`
+    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[0],'overall')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Total Events<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_total')">ⓘ</button></div><div class="value">${d.total}</div><div class="sub">Click for daily trend</div></div>
     <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label">Total Devices</div><div class="value">${d.total_devices || 0}</div><div class="sub">Active in window</div></div>
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label">Reliability</div><div class="value" style="color:${relColor(d.reliability)}">${d.reliability}%</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[1],'speed')"><div class="label">P50 Speed</div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div><div class="sub">Click for speed drill-down</div></div>
-    <div class="kpi" style="cursor:pointer" onclick="openLogCenter({hub:'${hub}',tab:'failures',context:{label:'${hub.toUpperCase()} — All Failures',desc:'${f} total failures in 30-day window'}})">
-      <div class="label">Failures</div><div class="value" style="color:var(--red)">${f}</div>
-      <div class="sub" style="color:var(--blue)">Click → Log Center</div></div>`;
+    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_reliability')">ⓘ</button></div><div class="value" style="color:${relColor(d.reliability)}">${d.reliability}%</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[1],'speed')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">P50 Speed<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_latency')">ⓘ</button></div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div><div class="sub">Click for speed drill-down</div></div>
+    <div class="kpi" style="cursor:pointer" onclick="openLogCenter({hub:'${hub}',tab:'failures',context:{label:'${hub.toUpperCase()} — All Failures',desc:'${f} failures · ${activePeriodLabel()}'}})">
+      <div class="label" style="display:flex;justify-content:space-between;align-items:center">Failures<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_failures')">ⓘ</button></div><div class="value" style="color:var(--red)">${f}</div>
+      <div class="sub" style="color:var(--blue)">Click → Log Center</div></div>
+    <div class="kpi" style="cursor:pointer" onclick="showHubNSModal('${hub}')">
+      <div class="label" style="display:flex;justify-content:space-between;align-items:center">North Star (Sub-1s)<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_northstar')">ⓘ</button></div>
+      <div class="value" style="color:${nsC}">${nsAvg}%</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Click for breakdown</span>${tgtLine(parseFloat(nsAvg),TARGETS.northStar)}</div></div>`;
   renderOverall(d);renderSpeed(d);renderReliability(d);renderUsage(d);
 }
 
@@ -762,25 +810,31 @@ function showDayDebug(hub,dayIdx,focus){
 }
 
 function renderOverall(d){
+  const _nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
+  const _nsC=parseFloat(_nsAvg)>=85?'var(--green)':parseFloat(_nsAvg)>=70?'var(--yellow)':'var(--red)';
+  const _nsBar=document.getElementById('nsKpiBar');
+  if(_nsBar)_nsBar.innerHTML=`<div onclick="showHubNSModal('${activeHub}')" style="display:flex;align-items:center;gap:14px;padding:9px 14px;background:var(--bg);border-radius:6px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onmouseover="this.style.borderColor='var(--blue)'" onmouseout="this.style.borderColor='var(--border)'"><div style="font-size:26px;font-weight:700;color:${_nsC};line-height:1">${_nsAvg}%</div><div><div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:12px;color:#e8edf5;font-weight:600">Period Average</span>${tgtLine(parseFloat(_nsAvg),TARGETS.northStar)}</div><div style="font-size:9px;color:var(--blue);margin-top:3px">Click to see formula &amp; full breakdown →</div></div></div>`;
   const dates=d.daily.map(r=>r.date.slice(5));
   charts.daily=mc('dailyChart',{type:'bar',data:{labels:dates,datasets:[
     {label:'Events',data:d.daily.map(r=>r.total),backgroundColor:'#2a6bd4',borderRadius:2,order:2},
-    {label:'Reliability %',data:d.daily.map(r=>r.rel),type:'line',borderColor:'#1fa355',yAxisID:'y1',tension:.3,pointRadius:3,borderWidth:1.5,order:1}]},
+    {label:'Reliability %',data:d.daily.map(r=>r.rel),type:'line',borderColor:'#1fa355',yAxisID:'y1',tension:.3,pointRadius:3,borderWidth:1.5,order:1},
+    {label:'Target 97%',data:dates.map(()=>97),type:'line',yAxisID:'y1',borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0,order:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       onClick:(e,els)=>{if(!els.length)return;
-        // datasetIndex 0 = Events bar, 1 = Reliability line
+        // datasetIndex 0 = Events bar, 1 = Reliability line, 2 = target
         const focus=els[0].datasetIndex===1?'reliability':'events';
         showDayDebug(activeHub,els[0].index,focus);},
-      plugins:{tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+(ctx.dataset.yAxisID==='y1'?ctx.parsed.y.toFixed(2)+'%':ctx.parsed.y+' events')}}}},
+      plugins:{tooltip:{filter:function(item){return item.datasetIndex<2;},callbacks:{label:function(ctx){return ctx.dataset.label+': '+(ctx.dataset.yAxisID==='y1'?ctx.parsed.y.toFixed(2)+'%':ctx.parsed.y+' events')}}}},
       scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},
         y1:{title:{display:true,text:'Reliability %'},position:'right',min:85,max:102,grid:{display:false}},
         x:{title:{display:true,text:'Date'}}}}});
 
   charts.ns=mc('nsChart',{type:'line',data:{labels:dates,datasets:[
-    {label:'Sub-1s %',data:d.daily.map(r=>r.ns),borderColor:'#3d82f0',backgroundColor:'rgba(61,130,240,.1)',fill:true,tension:.3,pointRadius:3}]},
+    {label:'Sub-1s %',data:d.daily.map(r=>r.ns),borderColor:'#3d82f0',backgroundColor:'rgba(61,130,240,.1)',fill:true,tension:.3,pointRadius:3},
+    {label:'Target 85%',data:dates.map(()=>85),borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       onClick:(e,els)=>{if(!els.length)return;showDayDebug(activeHub,els[0].index,'ns');},
-      plugins:{tooltip:{callbacks:{label:function(ctx){return 'Sub-1s: '+ctx.parsed.y.toFixed(1)+'%'}}}},
+      plugins:{tooltip:{filter:function(item){return item.datasetIndex===0;},callbacks:{label:function(ctx){return 'Sub-1s: '+ctx.parsed.y.toFixed(1)+'%'}}}},
       scales:{y:{title:{display:true,text:'% Events Under 1 Second (click to inspect)'},min:60,max:102},x:{title:{display:true,text:'Date'}}}}});
 
   const hm=document.getElementById('heatmapContainer');hm.innerHTML='';
@@ -824,26 +878,28 @@ function renderSpeed(d){
   }).filter(e=>e.lat!==null);
 
   const segs=[
-    {key:'hub_snap_hub',name:'Hub → SNAP → Hub',desc:'App triggers hub → hub issues Matter cmd over Thread mesh → SNAP device activates → state reflected back to hub',val:s.hub_snap_hub,color:'var(--green)',
+    {key:'hub_snap_hub',name:'Hub → SNAP → Hub',desc:'App triggers hub → hub issues Matter cmd over Thread mesh → SNAP device activates → state reflected back to hub',val:s.hub_snap_hub,color:'var(--green)',target:TARGETS.hubSnap,
      cols:[{key:'ts',label:'Event Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'matter_ts',label:'Matter CMD Sent'},{key:'snap_ts',label:'State Reflected'},{key:'lat',label:'Total (ms)'},{key:'room',label:'Room'}]},
-    {key:'hub_app',name:'Hub → App (WebSocket Push)',desc:'Device state confirmed at hub (snap_ts) → hub immediately pushes via WebSocket → app reflects new state. P50: '+s.hub_app.p50+'ms',val:s.hub_app,color:'var(--blue)',
+    {key:'hub_app',name:'Hub → App (WebSocket Push)',desc:'Device state confirmed at hub (snap_ts) → hub immediately pushes via WebSocket → app reflects new state. P50: '+s.hub_app.p50+'ms',val:s.hub_app,color:'var(--blue)',target:TARGETS.hubApp,
      derivedEvents:hubAppEvents,
      cols:[{key:'ts',label:'Event Time'},{key:'hub_dispatched',label:'State Confirmed at Hub'},{key:'app_confirmed',label:'App Received (ws_conf)'},{key:'lat',label:'Push (ms)'},{key:'dev',label:'Device'},{key:'room',label:'Room'}]},
-    {key:'local_e2e',name:'Local E2E (App → Hub → Device → Hub → App)',desc:'Full round-trip: App sends cmd → Hub receives → SNAP device activates → state pushed back to app via WebSocket (Wi-Fi)',val:s.local_e2e,color:'var(--purple)',
+    {key:'local_e2e',name:'Local E2E (App → Hub → Device → Hub → App)',desc:'Full round-trip: App sends cmd → Hub receives → SNAP device activates → state pushed back to app via WebSocket (Wi-Fi)',val:s.local_e2e,color:'var(--purple)',target:TARGETS.localE2e,
      cols:[{key:'ts',label:'Tap Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'cmd_sent',label:'CMD Sent'},{key:'rest_resp',label:'Hub ACK\'d'},{key:'ws_conf',label:'App Updated'},{key:'lat',label:'E2E (ms)'}]},
-    {key:'remote_e2e',name:'Remote E2E (App → Hub → Device → Hub → App)',desc:'Full round-trip via Internet: App sends cmd remotely → Hub receives → SNAP device activates → state pushed back to app via WebSocket',val:s.remote_e2e,color:'var(--yellow)',
+    {key:'remote_e2e',name:'Remote E2E (App → Hub → Device → Hub → App)',desc:'Full round-trip via Internet: App sends cmd remotely → Hub receives → SNAP device activates → state pushed back to app via WebSocket',val:s.remote_e2e,color:'var(--yellow)',target:TARGETS.remoteE2e,
      cols:[{key:'ts',label:'Tap Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'cmd_sent',label:'CMD Sent'},{key:'rest_resp',label:'Hub ACK\'d'},{key:'ws_conf',label:'App Updated'},{key:'lat',label:'E2E (ms)'}]}
   ];
 
   const el=document.getElementById('speedSegments');el.innerHTML='';
   segs.forEach(sg=>{
     const pct=Math.min((sg.val.p50/maxBar)*100,100);
-    const isSlow=sg.val.p50>800;
+    const isSlow=sg.target?sg.val.p50>sg.target.val:sg.val.p50>800;
     const div=document.createElement('div');div.className='speed-segment';
     div.innerHTML=`<div class="seg-name"><strong>${sg.name}</strong><br><span style="color:var(--muted);font-size:9px">${sg.desc}</span></div>
       <div class="seg-bar"><div class="seg-fill" style="width:${pct}%;background:${isSlow?'var(--yellow)':sg.color}"></div></div>
-      <div class="seg-val" style="color:${isSlow?'var(--yellow)':'#e8edf5'}">${sg.val.p50}</div>
-      <div class="seg-unit">ms<br><span style="font-size:8px;color:var(--muted)">P50</span></div>`;
+      <div style="text-align:right;min-width:105px">
+        <div class="seg-val" style="color:${isSlow?'var(--yellow)':'#e8edf5'}">${sg.val.p50}ms</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">P50 · ${tgtLine(sg.val.p50,sg.target)}</div>
+      </div>`;
     div.onclick=()=>{
       const row=(l,v)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0;white-space:nowrap">${l}</td><td>${v}</td></tr>`;
       let body=`<table style="font-size:12px;margin-bottom:14px">
@@ -891,24 +947,88 @@ function renderSpeed(d){
         showModal(`Speed ${k}ms — ${b[k]} Events`,body)},
       scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},x:{title:{display:true,text:'Speed Range (ms)'}}}}});
 
-  const ucs=Object.keys(s.per_uc).sort();
-  charts.ucLat=mc('ucLatChart',{type:'bar',data:{labels:ucs,datasets:[
-    {label:'Avg',data:ucs.map(u=>s.per_uc[u].avg),backgroundColor:'#2a6bd4'},
-    {label:'P50',data:ucs.map(u=>s.per_uc[u].p50),backgroundColor:'#3d82f0'},
-    {label:'P95',data:ucs.map(u=>s.per_uc[u].p95),backgroundColor:'#d4961f'}]},
-    options:{responsive:true,maintainAspectRatio:false,
-      onClick:(e,els)=>{if(!els.length)return;showUCDetail(ucs[els[0].index]);},
-      scales:{y:{title:{display:true,text:'Speed (ms)'},beginAtZero:true},x:{title:{display:true,text:'Use Case'}}}}});
+  renderUCCards(s.per_uc);
+}
 
-  const tb=document.getElementById('ucSpeedTable');tb.innerHTML='';
-  ucs.forEach(u=>{
-    const v=s.per_uc[u];
+function renderUCCards(perUc){
+  const BKTS=[
+    {k:'<500ms',     color:'#1fa355',label:'<500ms'},
+    {k:'500-1000ms', color:'#d4961f',label:'500ms–1s'},
+    {k:'1-2s',       color:'#e07a20',label:'1–2s'},
+    {k:'2-5s',       color:'#e04545',label:'2–5s'},
+    {k:'>5s',        color:'#b02a2a',label:'>5s'},
+  ];
+  const grid=document.getElementById('ucCardsGrid');
+  if(!grid)return;
+  grid.innerHTML='';
+  Object.keys(perUc).sort().forEach(uc=>{
+    const v=perUc[uc];
     const st=v.p95<1000?'Healthy':v.p95<2000?'Warning':'Critical';
     const sc=st==='Healthy'?'tag-green':st==='Warning'?'tag-yellow':'tag-red';
-    tb.innerHTML+=`<tr class="clickable" onclick="showUCDetail('${u}')">
-    <td><strong>${u}</strong></td><td>${v.count}</td><td>${v.avg}</td><td>${v.p50}</td>
-    <td style="color:${v.p95>1000?'var(--red)':'var(--green)'}">${v.p95}</td>
-    <td><span class="tag ${sc}">${st}</span></td></tr>`;
+    const p50c=v.p50<500?'var(--green)':v.p50<1000?'var(--yellow)':'var(--red)';
+    const p95c=v.p95<1000?'var(--green)':v.p95<2000?'var(--yellow)':'var(--red)';
+    const bkts=v.buckets||{};
+    const bkTotal=BKTS.reduce((s,b)=>s+(bkts[b.k]||0),0)||1;
+    const under1k=(bkts['<500ms']||0)+(bkts['500-1000ms']||0);
+    const sub1sPct=bkTotal>1?((under1k/bkTotal)*100).toFixed(0):0;
+    const sub1sC=sub1sPct>=85?'var(--green)':sub1sPct>=70?'var(--yellow)':'var(--red)';
+
+    const barSegs=BKTS.map(b=>{
+      const cnt=bkts[b.k]||0;if(!cnt)return'';
+      const pct=(cnt/bkTotal*100).toFixed(2);
+      return `<div style="width:${pct}%;background:${b.color};height:100%" title="${b.k}: ${cnt} events (${parseFloat(pct).toFixed(1)}%)"></div>`;
+    }).join('');
+
+    const legend=BKTS.filter(b=>(bkts[b.k]||0)>0).map(b=>{
+      const pct=((bkts[b.k]||0)/bkTotal*100).toFixed(0);
+      return `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:7px;height:7px;border-radius:1px;background:${b.color};display:inline-block;flex-shrink:0"></span>${b.label} ${pct}%</span>`;
+    }).join('');
+
+    const card=document.createElement('div');
+    card.className='uc-card';
+    card.innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
+        <div style="font-size:12px;font-weight:600;color:#e8edf5;line-height:1.3;padding-right:8px">${uc}</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          <button class="info-btn" onclick="event.stopPropagation();showInfo('uc_speed_metrics')" title="What do these numbers mean?">ⓘ</button>
+          <span class="tag ${sc}">${st}</span>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:12px">${v.count.toLocaleString()} events · ${activePeriodLabel()}</div>
+      <div style="font-size:26px;font-weight:700;color:${p50c};line-height:1">${v.p50}ms</div>
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:10px">Median (P50)</div>
+      <div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;margin-bottom:12px">
+        <div style="flex:1;padding:6px 8px;text-align:center;border-right:1px solid var(--border)">
+          <div style="font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px">Avg</div>
+          <div style="font-size:12px;font-weight:600">${v.avg}ms</div>
+        </div>
+        <div style="flex:1;padding:6px 8px;text-align:center;border-right:1px solid var(--border)">
+          <div style="font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px">P95</div>
+          <div style="font-size:12px;font-weight:600;color:${p95c}">${v.p95}ms</div>
+        </div>
+        <div style="flex:1;padding:6px 8px;text-align:center;border-right:1px solid var(--border)">
+          <div style="font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px">Std Dev</div>
+          <div style="font-size:12px;font-weight:600;color:${(v.stddev||0)>500?'var(--red)':(v.stddev||0)>200?'var(--yellow)':'var(--green)'}">${v.stddev??'—'}ms</div>
+        </div>
+        <div style="flex:1;padding:6px 8px;text-align:center">
+          <div style="font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:2px">Sub-1s</div>
+          <div style="font-size:12px;font-weight:600;color:${sub1sC}">${sub1sPct}%</div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:9px;color:var(--muted);margin-bottom:5px">
+        <span>Latency distribution</span>
+        <span style="color:${sub1sC}">Under 1s: ${sub1sPct}%</span>
+      </div>
+      <div style="display:flex;height:9px;border-radius:4px;overflow:hidden;background:var(--border);margin-bottom:8px">
+        ${barSegs||`<div style="width:100%;background:var(--border)"></div>`}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:9px;color:var(--muted);margin-bottom:10px;line-height:1.6">
+        ${legend||'<span>No latency data</span>'}
+      </div>
+      <div style="font-size:10px;color:var(--blue);text-align:right;opacity:.8">Click to inspect events →</div>
+    `;
+    card.onclick=()=>showUCDetail(uc);
+    grid.appendChild(card);
   });
 }
 
@@ -925,14 +1045,16 @@ window.showUCDetail=function(uc){
   const desc=UC_DESC[uc]||uc;
   const row=(l,val)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0;white-space:nowrap">${l}</td><td>${val}</td></tr>`;
   const lcOpts={hub,tab:'all',ucFilter:uc,context:{label:`${uc} — Events`,desc:`${hub.toUpperCase()} · P50: ${v.p50}ms · P95: ${v.p95}ms · ${v.count} total`}};
+  const stddevC=v.stddev>500?'var(--red)':v.stddev>200?'var(--yellow)':'var(--green)';
   let body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--muted);line-height:1.6">
     <strong style="color:#e8edf5">${uc}</strong><br>${desc}
   </div>
   <table style="font-size:12px;margin-bottom:14px">
     ${row('Total Events',`<strong style="font-size:16px">${v.count}</strong>`)}
-    ${row('Avg Speed',v.avg+'ms')}
+    ${row('Avg',v.avg+'ms')}
     ${row('P50 (median)',`<strong style="font-size:16px;color:#e8edf5">${v.p50}ms</strong>`)}
     ${row('P95',`<span style="color:${v.p95>1000?'var(--red)':v.p95>500?'var(--yellow)':'var(--green)'}">${v.p95}ms${v.p95>1000?' — CRITICAL':v.p95>500?' — WARNING':''}</span>`)}
+    ${row('Std Dev',`<span style="color:${stddevC};font-weight:600">${v.stddev}ms</span><span style="font-size:10px;color:var(--muted);margin-left:8px">${v.stddev>500?'erratic':v.stddev>200?'moderate variability':'consistent'}</span>`)}
   </table>`;
   if(v.events&&v.events.length){
     body+=`<div class="dbg-section-hdr" style="margin-bottom:8px">
@@ -948,6 +1070,35 @@ window.showUCDetail=function(uc){
 // ═══════════════════════════════════════════════════════════
 //  SECTION 5 — RELIABILITY TAB
 // ═══════════════════════════════════════════════════════════
+window.toggleDockSort=function(){
+  _dockSortAsc=!_dockSortAsc;
+  const btn=document.getElementById('dockSortBtn');
+  if(btn)btn.textContent=_dockSortAsc?'Fewest ▲':'Most ▼';
+  _renderDockTable(_lastDockStats);
+};
+
+function _renderDockTable(dockStats){
+  _lastDockStats=dockStats;
+  const sorted=[...dockStats].sort((a,b)=>_dockSortAsc?(a.failure||0)-(b.failure||0):(b.failure||0)-(a.failure||0));
+  const ddt=document.getElementById('dockDetailTable');
+  if(!ddt)return;
+  ddt.innerHTML='';
+  if(sorted.length){
+    sorted.forEach(ds=>{
+      const rc2=relTag(ds.rel||0);
+      const dkCount=(ds.docklets||[]).length;
+      ddt.innerHTML+=`<tr class="clickable" onclick="showDockStatModal(${JSON.stringify(ds).replace(/"/g,'&quot;')})">
+      <td style="font-family:monospace;font-size:11px">${ds.dock_id}</td><td>${ds.total}</td>
+      <td style="color:var(--green)">${ds.success}</td>
+      <td style="color:${ds.failure>0?'var(--red)':'inherit'};font-weight:${ds.failure>0?600:400}">${ds.failure}</td>
+      <td><span class="tag ${rc2}">${ds.rel}%</span></td>
+      <td style="font-size:10px;color:var(--muted)">${dkCount} docklet${dkCount!==1?'s':''}</td></tr>`;
+    });
+  } else {
+    ddt.innerHTML='<tr><td colspan="6" style="color:var(--muted);font-size:11px;text-align:center;padding:14px">No dock data yet</td></tr>';
+  }
+}
+
 function renderReliability(d){
   const r=d.reliability_detail;
   const dockStats=r.dock_stats||[];
@@ -957,8 +1108,8 @@ function renderReliability(d){
   const relKPIEl=document.getElementById('relKPIs');
   if(relKPIEl)relKPIEl.style.gridTemplateColumns='repeat(2,1fr)';
   document.getElementById('relKPIs').innerHTML=`
-    <div class="kpi" onclick="showRelModal('app_trigger')"><div class="label">App Trigger → Feedback</div><div class="value" style="color:${relColor(r.app_trigger_feedback)}">${r.app_trigger_feedback}%</div><div class="formula-ref">= ${r.app_feedbacks||0} ÷ ${r.app_triggers||0}</div><div class="sub">Click to debug</div></div>
-    <div class="kpi" onclick="showRelModal('dock_trigger')"><div class="label">Dock Trigger Reliability</div><div class="value" style="color:${relColor(dockRel)}">${dockRel}%</div><div class="formula-ref">${dsSucc} success · ${dsTot-dsSucc} failed of ${dsTot}</div><div class="sub">Click for breakdown</div></div>`;
+    <div class="kpi" onclick="showRelModal('app_trigger')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">App Trigger → Feedback<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_kpis')">ⓘ</button></div><div class="value" style="color:${relColor(r.app_trigger_feedback)}">${r.app_trigger_feedback}%</div><div class="formula-ref">= ${r.app_feedbacks||0} ÷ ${r.app_triggers||0}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px"><span class="sub" style="margin:0">Click to debug</span>${tgtLine(r.app_trigger_feedback,TARGETS.appTrigger)}</div></div>
+    <div class="kpi" onclick="showRelModal('dock_trigger')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Dock Trigger Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_kpis')">ⓘ</button></div><div class="value" style="color:${relColor(dockRel)}">${dockRel}%</div><div class="formula-ref">${dsSucc} success · ${dsTot-dsSucc} failed of ${dsTot}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px"><span class="sub" style="margin:0">Click for breakdown</span>${tgtLine(dockRel,TARGETS.dockRel)}</div></div>`;
 
   const srt=document.getElementById('srcRelTable');srt.innerHTML='';
   if(r.src_rel){Object.entries(r.src_rel).forEach(([src,v])=>{
@@ -970,26 +1121,17 @@ function renderReliability(d){
       <td style="font-size:10px;color:var(--blue)">${hasFails?'View failures →':'No failures'}</td>
     </tr>`})}
 
-  const ddt=document.getElementById('dockDetailTable');ddt.innerHTML='';
-  if(dockStats.length){dockStats.forEach(ds=>{
-    const rc2=relTag(ds.rel||0);
-    const acts=(ds.actions||[]).map(a=>a.action.charAt(0).toUpperCase()+a.action.slice(1)).join(', ')||'—';
-    ddt.innerHTML+=`<tr class="clickable" onclick="showDockStatModal(${JSON.stringify(ds).replace(/"/g,'&quot;')})">
-    <td style="font-family:monospace;font-size:11px">${ds.dock_id}</td><td>${ds.total}</td>
-    <td style="color:var(--green)">${ds.success}</td>
-    <td style="color:${ds.failure>0?'var(--red)':'inherit'};font-weight:${ds.failure>0?600:400}">${ds.failure}</td>
-    <td><span class="tag ${rc2}">${ds.rel}%</span></td>
-    <td style="font-size:10px;color:var(--muted)">${acts}</td></tr>`})}
-  else{ddt.innerHTML='<tr><td colspan="6" style="color:var(--muted);font-size:11px;text-align:center;padding:14px">No dock data yet</td></tr>'}
+  _renderDockTable(dockStats);
 
   const dates=d.daily.map(r=>r.date.slice(5));
   charts.relTrend=mc('relTrendChart',{type:'line',data:{labels:dates,datasets:[
-    {label:'Reliability %',data:d.daily.map(r=>r.rel),borderColor:'#1fa355',tension:.3,pointRadius:3,fill:true,backgroundColor:'rgba(31,163,85,.06)'}]},
+    {label:'Reliability %',data:d.daily.map(r=>r.rel),borderColor:'#1fa355',tension:.3,pointRadius:3,fill:true,backgroundColor:'rgba(31,163,85,.06)'},
+    {label:'Target 97%',data:dates.map(()=>97),borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       onClick:(e,els)=>{if(!els.length)return;
         const day=d.daily[els[0].index];
         openLogCenter({hub:activeHub,tab:'failures',filters:{search:day.date},context:{label:`Failures on ${day.date}`,desc:`${activeHub.toUpperCase()} · Reliability was ${day.rel}%`}});},
-      plugins:{tooltip:{callbacks:{label:function(ctx){return 'Reliability: '+ctx.parsed.y.toFixed(2)+'%'}}}},
+      plugins:{tooltip:{filter:function(item){return item.datasetIndex===0;},callbacks:{label:function(ctx){return 'Reliability: '+ctx.parsed.y.toFixed(2)+'%'}}}},
       scales:{y:{title:{display:true,text:'Reliability % (click to inspect failures)'},min:85,max:102},x:{title:{display:true,text:'Date'}}}}});
 
   const frt=document.getElementById('failReasonTable');frt.innerHTML='';
@@ -1023,6 +1165,25 @@ function renderReliability(d){
     });
   }
 
+  const dat=document.getElementById('devActivityTable');if(dat){
+    dat.innerHTML='';
+    if(d.devices&&d.devices.length){
+      d.devices.forEach(dev=>{
+        const rc=relTag(dev.rel);
+        const failC=Math.round(dev.total*(100-dev.rel)/100);
+        const devShort=(dev.id||'').replace('light.snap_','').replace('switch.snap_','');
+        dat.innerHTML+=`<tr class="clickable" onclick="showDevModal('${dev.id}','${dev.room}',${dev.total},${dev.rel},${dev.p50},${failC})">
+          <td style="font-size:10px;font-family:monospace">${devShort}</td>
+          <td style="font-size:11px">${dev.room}</td>
+          <td>${dev.total}</td>
+          <td><span class="tag ${rc}">${dev.rel}%</span></td>
+          <td style="color:${dev.p50>800?'var(--yellow)':'inherit'}">${dev.p50}ms</td>
+        </tr>`;
+      });
+    } else {
+      dat.innerHTML='<tr><td colspan="5" style="color:var(--muted);font-size:11px;text-align:center;padding:14px">No device data yet</td></tr>';
+    }
+  }
 }
 
 window.showSrcRelModal=function(src,total,success,fail,rel){
@@ -1168,31 +1329,30 @@ function showDockStatModal(ds){
   const relPct=ds.rel!=null?ds.rel:(ds.total>0?+(100*ds.success/ds.total).toFixed(2):0);
   const rc=relColor(relPct);
   const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
-  const actions=ds.actions||[];
-  let actHtml='';
-  if(actions.length){
-    actHtml=`<div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Action Breakdown (${actions.length} types)</span></div>
+  const docklets=ds.docklets||[];
+  let dockletHtml='';
+  if(docklets.length){
+    dockletHtml=`<div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Docklet Breakdown (${docklets.length} docklet${docklets.length!==1?'s':''})</span></div>
     <table style="font-size:11px;width:100%"><thead><tr style="border-bottom:1px solid var(--border)">
-      <th style="text-align:left;padding:5px 8px">Action</th><th>Total</th><th>Success</th><th>Fail</th><th>Reliability</th>
+      <th style="text-align:left;padding:5px 8px">Docklet ID</th><th>Total</th><th>Success</th><th>Fail</th><th>Reliability</th>
     </tr></thead><tbody>
-    ${actions.map(a=>{const arc=relTag(a.rel||0);return`<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:5px 8px;font-weight:500">${a.action}</td>
-      <td style="text-align:center;padding:5px 8px">${a.total}</td>
-      <td style="text-align:center;padding:5px 8px;color:var(--green)">${a.success}</td>
-      <td style="text-align:center;padding:5px 8px;color:${a.failure>0?'var(--red)':'inherit'}">${a.failure}</td>
-      <td style="text-align:center;padding:5px 8px"><span class="tag ${arc}">${a.rel||0}%</span></td>
+    ${docklets.map(dk=>{const dkrc=relTag(dk.rel||0);return`<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:5px 8px;font-family:monospace;font-size:10px">${dk.docklet_id}</td>
+      <td style="text-align:center;padding:5px 8px">${dk.total}</td>
+      <td style="text-align:center;padding:5px 8px;color:var(--green)">${dk.success}</td>
+      <td style="text-align:center;padding:5px 8px;color:${dk.failure>0?'var(--red)':'inherit'}">${dk.failure}</td>
+      <td style="text-align:center;padding:5px 8px"><span class="tag ${dkrc}">${dk.rel||0}%</span></td>
     </tr>`;}).join('')}
     </tbody></table></div>`;
   }
-  const dockletId=ds.docklet_id?`<br><span style="font-size:10px;color:var(--muted)">Docklet: ${ds.docklet_id}</span>`:'';
   showModal(`Dock: ${ds.dock_id}`,`<table style="font-size:12px;margin-bottom:4px">
-    ${row('Dock ID',`<strong style="font-family:monospace;font-size:13px">${ds.dock_id}</strong>${dockletId}`)}
+    ${row('Dock ID',`<strong style="font-family:monospace;font-size:13px">${ds.dock_id}</strong>`)}
     ${row('Total Actions',`<strong style="font-size:16px">${ds.total||'No data'}</strong>`)}
     ${ds.total?row('Successful',`<strong style="color:var(--green)">${ds.success}</strong>`):''}
     ${ds.total?row('Failed',`<strong style="color:var(--red);font-size:16px">${ds.failure}</strong>`):''}
     ${ds.total?row('Reliability',`<strong style="color:${rc};font-size:16px">${relPct}%</strong>`):''}
-  </table>${actHtml}
-  ${!actions.length?'<p style="font-size:11px;color:var(--muted);padding:4px 0">Per-action breakdown available once dock logs are connected.</p>':''}`);
+  </table>${dockletHtml}
+  ${!docklets.length?'<p style="font-size:11px;color:var(--muted);padding:4px 0">No per-docklet breakdown available for this dock.</p>':''}`);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1202,12 +1362,11 @@ function renderUsage(d){
   const u=d.usage||{app:0,remote:0,docklet:0,direct:0,app_ratio:0,dock_ratio:0,scene_per_day:0};
   const hTotal=(u.app||0)+(u.docklet||0);
   document.getElementById('usageKPIs').innerHTML=`
-    <div class="kpi" onclick="showUsageModal('auto')"><div class="label">Automation / Day</div><div class="value">${u.auto_per_day||0}</div><div class="formula-ref">= ${u.direct||0} ÷ 30 days</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="showUsageModal('scene')"><div class="label">Scene / Day</div><div class="value">${u.scene_per_day||0}</div><div class="formula-ref">= ${u.scene||0} ÷ 30 days</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="showUsageModal('app')"><div class="label">App Usage Ratio</div><div class="value">${u.app_ratio||0}%</div><div class="formula-ref">= ${u.app||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="showUsageModal('dock')"><div class="label">Dock Usage Ratio</div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>`;
-  const srcLabels=['App (Local)','Remote App','Dock Control','Automation', 'Scene'];
-  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,u.direct||0, u.scene||0],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f', '#e65c00'],borderWidth:0}]},
+    <div class="kpi" onclick="showUsageModal('auto')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Automation / Day<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_auto')">ⓘ</button></div><div class="value">${u.scene_per_day||0}</div><div class="formula-ref">= ${u.direct||0} ÷ ${activeDaysCount()} days</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('app')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">App Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_app')">ⓘ</button></div><div class="value">${u.app_ratio||0}%</div><div class="formula-ref">= ${u.app||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('dock')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Dock Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_dock')">ⓘ</button></div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>`;
+  const srcLabels=['App (Local)','Remote App','Dock Control','Automation'];
+  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,u.direct||0],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f'],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
       onClick:(e,els)=>{if(!els.length)return;
         const src=srcLabels[els[0].index];
@@ -1223,11 +1382,11 @@ function renderUsage(d){
       const totalDockActions=dockStats.reduce((s,dk)=>s+dk.total,0);
       const uniqueDockCount=new Set(dockStats.map(ds=>ds.dock_id)).size;
       dockUsageEl.style.display='';
-      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px">Dock Usage</h3>
+      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 10px;display:flex;justify-content:space-between;align-items:center">Dock Usage<button class="info-btn" onclick="event.stopPropagation();showInfo('dock_usage')">ⓘ</button></h3>
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
         <div class="kpi" style="flex:1;min-width:120px"><div class="label">Total Actions</div><div class="value">${totalDockActions}</div></div>
         <div class="kpi" style="flex:1;min-width:120px"><div class="label">Active Docks</div><div class="value">${uniqueDockCount}</div></div>
-        <div class="kpi" style="flex:1;min-width:120px"><div class="label">Active Docklets</div><div class="value">${dockStats.length}</div></div>
+        <div class="kpi" style="flex:1;min-width:120px"><div class="label">Active Docklets</div><div class="value">${dockStats.reduce((s,dk)=>s+(dk.docklets||[]).length,0)}</div></div>
       </div>
       <table style="font-size:11px;width:100%"><thead><tr>
         <th style="text-align:left;padding:4px 8px">Dock</th><th>Total</th><th>Success</th><th>Fail</th><th>Reliability</th>
@@ -1242,7 +1401,7 @@ function renderUsage(d){
       </tbody></table>`;
     } else {
       dockUsageEl.style.display='';
-      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px">Dock Usage</h3>
+      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px;display:flex;justify-content:space-between;align-items:center">Dock Usage<button class="info-btn" onclick="event.stopPropagation();showInfo('dock_usage')">ⓘ</button></h3>
       <p style="font-size:11px;color:var(--muted)">Dock usage data will appear here once dock logs are connected.</p>`;
     }
   }
@@ -1349,16 +1508,22 @@ function showFleetModal(type){
     </tbody></table></div>`;
 
   } else if(type==='northstar'){
-    title='Fleet North Star (Sub-1s) — Debug View';
-    body=`<table style="font-size:12px;margin-bottom:4px">
-      ${row('Fleet NS Average',`<strong style="font-size:18px;color:${fNSavg>85?'var(--green)':fNSavg>70?'var(--yellow)':'var(--red)'}">${fNSavg}%</strong>`)}
+    title='Fleet North Star — Sub-1s Rate';
+    const nsGap=(85-parseFloat(fNSavg)).toFixed(1);
+    body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px"><div style="font-size:11px;color:var(--muted);line-height:1.7"><strong style="color:#e8edf5">What is North Star?</strong><br>The percentage of all device control events completed end-to-end in under 1 second. This is the single most user-facing quality metric — anything over 1s feels like lag to the user. Target: ≥ 85%.</div><div style="font-size:10px;font-family:monospace;background:var(--surface2);border:1px solid var(--border2);padding:8px 12px;border-radius:4px;color:var(--blue);margin-top:10px">NS = ROUND(100 × COUNT(latency_ms &lt; 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div></div>
+    <table style="font-size:12px;margin-bottom:14px">
+      ${row('Fleet North Star',`<strong style="font-size:20px;color:${fNSavg>85?'var(--green)':fNSavg>70?'var(--yellow)':'var(--red)'}">${fNSavg}%</strong>`)}
+      ${row('Target','<strong style="color:var(--green)">≥ 85%</strong>')}
+      ${row('Status',parseFloat(fNSavg)>=85?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${nsGap}% gap</span>`)}
+      ${row('Period',`<span style="font-size:11px">${activePeriodLabel()}</span>`)}
     </table>
     <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub North Star</span></div>
-    <table style="font-size:11px"><thead><tr><th>Hub</th><th>NS Avg</th><th>Action</th></tr></thead><tbody>
+    <table style="font-size:11px"><thead><tr><th>Hub</th><th>NS Avg</th><th>Status</th><th>Action</th></tr></thead><tbody>
     ${hubs.map(h=>{const d=D[h];const nsA=d.daily?((d.daily.reduce((s,dy)=>s+(dy.ns||0),0))/d.daily.length).toFixed(1):'—';const isBad=parseFloat(nsA)<85;
       return`<tr><td><strong>${h.toUpperCase()}</strong></td>
         <td style="font-weight:600;color:${isBad?'var(--red)':'var(--green)'}">${nsA}%</td>
-        <td>${isBad?`<button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${h}',tab:'slow',context:{label:'${h.toUpperCase()} Slow Events',desc:'North Star at ${nsA}%'}})">Inspect →</button>`:'—'}</td></tr>`;
+        <td><span class="tag ${isBad?'tag-red':'tag-green'}">${isBad?'Below Target':'On Target'}</span></td>
+        <td>${isBad?`<button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${h}',tab:'slow',context:{label:'${h.toUpperCase()} Slow Events',desc:'North Star at ${nsA}%'}})">Inspect →</button>`:`<button class="dbg-lc-link" onclick="closeModal();showHubNSModal('${h}')">Drill-down →</button>`}</td></tr>`;
     }).join('')}
     </tbody></table></div>
     <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter({tab:'slow',context:{label:'All Fleet Slow Events',desc:'Events exceeding 800ms across all hubs'}})">View All Slow Events →</button></div>`;
@@ -1366,8 +1531,101 @@ function showFleetModal(type){
   showModal(title,body);
 }
 
+window.showHubNSModal=function(hub){
+  const d=D[hub];if(!d)return;
+  const nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
+  const nsC=parseFloat(nsAvg)>=85?'var(--green)':parseFloat(nsAvg)>=70?'var(--yellow)':'var(--red)';
+  const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
+  const recentDays=[...(d.daily||[])].reverse().slice(0,14);
+  const dayRows=recentDays.map(dy=>{
+    const c=(dy.ns||0)>=85?'var(--green)':(dy.ns||0)>=70?'var(--yellow)':'var(--red)';
+    const isBad=(dy.ns||0)<85;
+    return`<tr><td style="font-family:monospace;font-size:10px;color:var(--muted)">${dy.date}</td><td style="font-weight:600;color:${c}">${(dy.ns||0).toFixed(1)}%</td><td style="color:var(--muted)">${dy.total}</td><td>${isBad?`<button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'slow',filters:{search:'${dy.date}'},context:{label:'Slow Events ${dy.date}',desc:'NS was ${(dy.ns||0).toFixed(1)}%'}})">Inspect &rarr;</button>`:'—'}</td></tr>`;
+  }).join('');
+  const lcSlow={hub,tab:'slow',context:{label:`${hub.toUpperCase()} — Slow Events`,desc:`North Star at ${nsAvg}% · target ≥85%`}};
+  const body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px"><div style="font-size:11px;color:var(--muted);line-height:1.7"><strong style="color:#e8edf5">What is North Star?</strong><br>The percentage of all device control events completed end-to-end in under 1 second. This is the single most user-facing quality metric — anything over 1s feels like lag to the user.</div><div style="font-size:10px;font-family:monospace;background:var(--surface2);border:1px solid var(--border2);padding:8px 12px;border-radius:4px;color:var(--blue);margin-top:10px">NS = ROUND(100 &times; COUNT(latency_ms &lt; 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div></div>
+  <table style="font-size:12px;margin-bottom:14px">${row('Hub',`<strong>${hub.toUpperCase()}</strong>`)}${row('Period Average',`<strong style="font-size:20px;color:${nsC}">${nsAvg}%</strong>`)}${row('Target','<strong style="color:var(--green)">≥85%</strong>')}${row('Status',parseFloat(nsAvg)>=85?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${(85-parseFloat(nsAvg)).toFixed(1)}% gap</span>`)}${row('Period',activePeriodLabel())}</table>
+  <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Daily Trend — last ${recentDays.length} days (most recent first)</span></div>
+  <table style="font-size:11px"><thead><tr><th>Date</th><th>NS %</th><th>Total Events</th><th>Action</th></tr></thead><tbody>${dayRows}</tbody></table></div>
+  ${lcBtn(lcSlow,'View All Slow Events in Log Center →')}`;
+  showModal(`${hub.toUpperCase()} — North Star Drill-down`,body);
+};
+
+window.showInfo=function(key){
+  const INFO={
+    fleet_total:{title:'Total Fleet Events',body:'The total number of device control commands sent across all your hubs in the last 30 days. Every time someone taps to turn a light on or off — or a dock button is pressed — that counts as one event.'},
+    fleet_reliability:{title:'Fleet Reliability',body:'Out of all commands sent across every hub, what percentage actually worked? 100% = every command succeeded. Anything below 97% means some lights aren\'t responding as expected. Click the card to see which specific hubs are pulling this number down.'},
+    fleet_latency:{title:'Average P50 Latency',body:'"P50" means the median — half of all commands finished faster than this number, half were slower. Under 500ms feels near-instant to the user. Over 800ms starts to feel noticeably sluggish. This is the average P50 across all your hubs.'},
+    fleet_northstar:{title:'North Star — Sub-1s Rate',body:'What percentage of all commands completed in under 1 second? This is the single most user-facing quality metric — anything over 1s is perceptible lag. A healthy system should stay at 85% or above.'},
+    hub_total:{title:'Total Events',body:'All device commands sent through this specific hub in the last 30 days — from the app, dock buttons, remote access, and automations combined.'},
+    hub_reliability:{title:'Reliability',body:'The percentage of commands on this hub that completed successfully. Click to jump to the Reliability tab for a full breakdown by control source, failure reason, and per-device failure count.'},
+    hub_latency:{title:'P50 Latency',body:'The median response time for commands through this hub. Half of all commands were faster than this number. Click to jump to the Speed tab, which breaks down latency by each stage of the request pipeline.'},
+    hub_failures:{title:'Failures',body:'The number of commands that failed to complete on this hub in the last 30 days. Click to open the Log Center pre-filtered to this hub\'s failures for event-level investigation.'},
+    daily_chart:{title:'Daily Events & Reliability',body:'A day-by-day view of two things at once:\n\n• Blue bars = how many commands were sent that day (activity volume)\n• Green line = what percentage succeeded (reliability)\n\nA dip in the green line on a specific day means more commands were failing. Click any bar to investigate what happened on that day.'},
+    ns_chart:{title:'North Star — Sub-1s Rate',body:'Each point shows what percentage of commands on that day finished in under 1 second. A healthy system stays above 85% consistently. Drops usually indicate network congestion, a device issue, or Thread mesh instability. Click any point to see the slow events from that day.'},
+    heatmap:{title:'Activity Heatmap',body:'Shows when devices are controlled most — rows are days of the week, columns are hours of the day (0–23). Darker blue means more activity in that slot.\n\nUseful for spotting patterns like "most control happens on weekday evenings at 7–9pm." Hover any cell for a source breakdown (app vs dock vs remote vs auto). Click any cell to inspect those specific events in the Log Center.'},
+    speed_segments:{title:'Speed Segments',body:'Breaks down where time is actually spent when a command is sent. There are 4 stages:\n\n• Hub→SNAP→Hub: How long for the hub to command the physical device and get state confirmed back\n• Hub→App: How long for the hub to push the new state to the phone via WebSocket\n• Local E2E: Full round trip when the user is on the same Wi-Fi as the hub\n• Remote E2E: Full round trip when controlling from outside the home\n\nClick any row for event-level detail.'},
+    lat_dist:{title:'Latency Distribution',body:'How many commands fell into each speed bucket:\n\n• Green (under 500ms): Fast — feels instant\n• Green (500–800ms): Acceptable\n• Yellow (800ms–1s): Getting slow\n• Red (over 1s): Noticeably sluggish\n\nA healthy system has the vast majority of events in the fast buckets. Click any bar to see the actual events in that range.'},
+    uc_lat:{title:'Latency by Use Case',body:'Compares speed across the different ways devices can be controlled:\n\n• App Control: User tapped the phone app on local Wi-Fi\n• Dock Control: Physical dock button was pressed\n• Remote App: User controlled from outside the home\n• Automation: Triggered automatically by a schedule or rule\n\nShows Avg, P50 (typical), and P95 (worst-case). Useful for spotting if one control method is consistently slower.'},
+    uc_table:{title:'Per Use Case Speed',body:'Detailed latency numbers for each control method. The most important column is P95 — it represents the slowest 5% of commands, your worst-case user experience. P95 above 1 second is flagged as Critical and should be investigated. Click any row for event-level detail.'},
+    uc_speed_metrics:{title:'Speed Metrics Explained',body:'Every use-case card shows four numbers:\n\n• Avg — The simple average of all command times. Easy to read but one very slow event can pull it up and make things look worse than they are.\n\n• P50 (Median) — Sort all command times; P50 is the middle value. Half finished faster, half slower. This is what a typical user actually experiences day-to-day.\n\n• P95 — 95% of commands finished faster than this number. Only the slowest 5% were slower. This is your worst-case experience — if P95 is under 1000ms, even your slowest users are getting a decent experience.\n\n• Std Dev (Standard Deviation) — Measures how consistent the times are. A low number means most commands take a similar amount of time (predictable). A high number means some are fast and some are very slow (erratic). Green under 200ms · Yellow 200–500ms · Red above 500ms.'},
+    rel_kpis:{title:'Reliability KPIs',body:'Two ways of measuring how reliably commands are confirmed:\n\n• App Trigger Feedback: When a user taps in the app, does the app receive confirmation that the command worked? This is the most direct measure of app-facing reliability.\n• Dock Trigger Reliability: When a physical dock button is pressed, does the command succeed? This comes from the physical dock hardware logs.\n\nClick either card to debug failures for that source.'},
+    src_rel:{title:'Per-Source Reliability',body:'Reliability broken down by how the device was controlled — App, Remote App, Dock Control, or Automation. Lets you pinpoint whether one control method is failing more than others.\n\nIf App Control is 99% but Dock Control is 85%, the issue is specific to dock hardware or Thread mesh coverage near those docks. Click any row to see its failure events.'},
+    rel_trend:{title:'Reliability Trend',body:'How reliability changed over the past 30 days. A sustained drop indicates a persistent problem. A one-day spike usually points to a temporary event like a power outage or network hiccup.\n\nClick any point to jump directly to the Log Center filtered to that day\'s failures.'},
+    dock_rel:{title:'Dock Reliability',body:'Reliability per physical dock device. Each row shows one dock — how many button presses succeeded versus failed. If a specific dock has low reliability, it may have a Thread mesh coverage issue or a hardware fault.\n\nClick any row to see a per-action breakdown (which specific button assignments are failing).'},
+    fail_reason:{title:'Failures by Reason',body:'Groups all failures by what went wrong:\n\n• TIMEOUT: Command reached the hub but the device didn\'t respond in time\n• DEVICE_OFFLINE: Device wasn\'t reachable when the command was sent\n• NO_RESPONSE: Hub got no acknowledgement from the device\n• THREAD_MESH_FAIL: The wireless mesh dropped the packet before reaching the device\n\nClick any reason to see which devices and rooms are affected.'},
+    fail_device:{title:'Failures by Device',body:'Which individual lights or switches are failing the most. If one device appears here consistently, it likely needs attention — check Thread mesh coverage near it, verify the device is powered, or check if a firmware update is available.\n\nClick any row to inspect the failure events for that specific device.'},
+    usage_auto:{title:'Automation / Day',body:'How many automated or scheduled events happen per day on average. These are commands triggered without any user tapping — schedules, scenes, or rules set up in Home Assistant.\n\nA rising number here means the system is doing more work automatically, which is generally good.'},
+    usage_app:{title:'App Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from someone tapping the phone app? A high app ratio means users prefer the app over physical dock buttons.\n\nUseful for understanding how the system is actually being used day-to-day and whether dock hardware is being adopted.'},
+    usage_dock:{title:'Dock Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from pressing a physical dock button? A high dock ratio means users find the physical interface more natural or convenient than the app.'},
+    src_chart:{title:'Source Breakdown',body:'A visual split of all events by how they were triggered:\n\n• App (Local): User tapped the phone app on the same Wi-Fi\n• Remote App: User tapped the app from outside the home\n• Dock Control: Physical dock button was pressed\n• Automation: Triggered automatically by a schedule or rule\n\nClick any segment to see those specific events in the Log Center.'},
+    dock_usage:{title:'Dock Usage',body:'A summary of physical dock button activity:\n\n• Total Actions: All button presses across all docks in this period\n• Active Docks: How many unique dock devices have been used\n• Active Docklets: How many individual button assignments have been pressed\n\nThe table below shows per-docklet success and failure counts — useful for spotting a specific button that isn\'t working reliably. Click any row for a full action breakdown.'},
+    dev_activity:{title:'Device Activity',body:'A ranked list of every device (light or switch) controlled through this hub, sorted by most-used first. Shows:\n\n• Device: The entity ID (short name) of the device\n• Room: Which room it\'s in\n• Events: Total commands sent to this device in the 30-day window\n• Reliability: What percentage of commands on this device succeeded\n• P50: The median response time for this specific device\n\nClick any row to see the full stats for that device including its failure events.'},
+    log_center:{title:'Log Center',body:'A detailed event-level workspace for debugging. Every command event appears here with its timestamp, device, room, control method, latency, and failure reason.\n\nHow to use it:\n• Failures tab: Shows only failed commands — start here when investigating an issue\n• Slow Events tab: Shows commands that took over 800ms\n• All Events tab: Every event in the 30-day window\n• Source / Reason filters: Narrow down to a specific control method or failure type\n• Search box: Filter by device name, room, or date\n• Click any row: Expands a visual timing pipeline showing exactly where time was spent in that specific command'}
+  };
+  const item=INFO[key];if(!item)return;
+  const bodyHtml=item.body.replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>').replace(/•/g,'<span style="color:var(--blue);margin-right:2px">•</span>');
+  showModal(item.title,`<div style="font-size:12px;color:var(--muted);line-height:1.9">${bodyHtml}</div>`);
+};
+
 window.onload=async()=>{
+  _defaultDates();
+  const drFrom=document.getElementById('drFrom'),drTo=document.getElementById('drTo');
+  if(drFrom)drFrom.value=activeFrom;if(drTo)drTo.value=activeTo;
+  const lbl=document.getElementById('headerPeriodLabel');if(lbl)lbl.textContent=activePeriodLabel();
+
+  // Show landing shell immediately — user sees the page layout right away
+  document.getElementById('landingView').style.display='block';
+  document.getElementById('detailView').style.display='none';
+  document.getElementById('logCenterView').style.display='none';
+
+  const s=document.getElementById('drStatus');
+  if(s){s.textContent='Connecting…';s.style.color='var(--blue)';}
+
+  // Hub list is fast (no BigQuery)
   const{hubs}=await fetch('/api/hubs').then(r=>r.json());
-  await Promise.all(hubs.map(async h=>{D[h]=await fetch(`/api/hub/${h}?days=30`).then(r=>r.json())}));
+  document.getElementById('hubCount').textContent=hubs.length;
+
+  // Skeleton cards with hub IDs so user sees something immediately
+  const grid=document.getElementById('hubCardsGrid');
+  grid.innerHTML=hubs.map(h=>`
+    <div class="hub-grid-card" style="opacity:.45">
+      <div class="hgc-header">
+        <div class="hgc-name"><span class="hgc-dot" style="background:var(--muted)"></span>${h.toUpperCase()}</div>
+        <span style="font-size:10px;color:var(--muted)">Loading…</span>
+      </div>
+      <div style="padding:10px 0 6px;color:var(--muted);font-size:11px">Fetching analytics data…</div>
+    </div>`).join('');
+
+  // Fetch all hubs in parallel with progress counter
+  let loaded=0;
+  if(s)s.textContent=`Loading 0/${hubs.length}…`;
+  await Promise.all(hubs.map(async h=>{
+    D[h]=await fetch(`/api/hub/${h}?from_date=${activeFrom}&to_date=${activeTo}`).then(r=>r.json());
+    loaded++;
+    if(s)s.textContent=loaded<hubs.length?`Loading ${loaded}/${hubs.length}…`:'';
+  }));
+
+  if(s)s.textContent='';
   renderLanding();
 };
