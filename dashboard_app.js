@@ -6,7 +6,7 @@ let charts={},activeHub=null,_dockSortAsc=false,_lastDockStats=[],activeFrom='',
 
 const TARGETS={
   reliability: {val:97,   dir:'gte', lbl:'≥97%'},
-  northStar:   {val:85,   dir:'gte', lbl:'≥85%'},
+  northStar:   {val:95,   dir:'gte', lbl:'≥95%'},
   p50Local:    {val:1000, dir:'lte', lbl:'<1000ms'},
   hubSnap:     {val:300,  dir:'lte', lbl:'<300ms'},
   hubApp:      {val:200,  dir:'lte', lbl:'<200ms'},
@@ -65,7 +65,7 @@ function srcPred(key){
   const k=(key||'').toLowerCase();
   if(k.includes('dock'))return f=>(f.src||'').toLowerCase().includes('docklet');
   if(k.includes('remote'))return f=>{const s=(f.src||'').toLowerCase();return s.includes('app_remote')||s.includes('remote_app')||s==='remote';};
-  if(k.includes('auto'))return f=>(f.src||'').toLowerCase().includes('direct');
+  if(k.includes('auto')||k.includes('observ'))return f=>(f.src||'').toLowerCase().includes('direct');
   // App Control: src='app' only (not app_remote)
   return f=>(f.src||'').toLowerCase()==='app';
 }
@@ -128,8 +128,8 @@ function renderLanding(){
   document.getElementById('fleetKPIs').innerHTML=`
     <div class="kpi"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Total Fleet Events<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_total')">ⓘ</button></div><div class="value">${fTotal.toLocaleString()}</div><div class="sub">${hubs.length} hubs · ${activePeriodLabel()}</div></div>
     <div class="kpi" onclick="showFleetModal('reliability')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Fleet Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_reliability')">ⓘ</button></div><div class="value" style="color:${relColor(fRel)}">${fRel}%</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">${fSuccess.toLocaleString()} success · ${fFail} failures</span>${tgtLine(parseFloat(fRel),TARGETS.reliability)}</div></div>
-    <div class="kpi" onclick="showFleetModal('latency')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Avg P50 Speed<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_latency')">ⓘ</button></div><div class="value">${fP50}ms</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Median end-to-end response</span>${tgtLine(fP50,TARGETS.p50Local)}</div></div>
-    <div class="kpi" onclick="showFleetModal('northstar')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">North Star (Sub-1s)<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_northstar')">ⓘ</button></div><div class="value" style="color:${fNSavg>85?'var(--green)':fNSavg>70?'var(--yellow)':'var(--red)'}">${fNSavg}%</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Fleet avg under-1-second rate</span>${tgtLine(parseFloat(fNSavg),TARGETS.northStar)}</div></div>`;
+    <div class="kpi" onclick="showFleetModal('latency')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Avg P50 Latency<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_latency')">ⓘ</button></div><div class="value">${fP50}ms</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Median end-to-end response</span>${tgtLine(fP50,TARGETS.p50Local)}</div></div>
+    <div class="kpi" onclick="showFleetModal('northstar')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">North Star (Sub-1s)<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_northstar')">ⓘ</button></div><div class="value" style="color:${fNSavg>=95?'var(--green)':fNSavg>=80?'var(--yellow)':'var(--red)'}">${fNSavg}%</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Fleet avg under-1-second rate</span>${tgtLine(parseFloat(fNSavg),TARGETS.northStar)}</div></div>`;
 
   const grid=document.getElementById('hubCardsGrid');grid.innerHTML='';
   hubs.forEach(h=>{
@@ -156,7 +156,7 @@ function renderLanding(){
           <div style="display:flex;justify-content:space-between;gap:4px;margin-top:3px"><span class="hgc-m-sub">${failCount} fail</span>${tgtLine(d.reliability,TARGETS.reliability)}</div>
         </div>
         <div class="hgc-metric">
-          <div class="hgc-m-label">P50 Speed</div>
+          <div class="hgc-m-label">P50 Latency</div>
           <div class="hgc-m-value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div>
           <div style="display:flex;justify-content:space-between;gap:4px;margin-top:3px"><span class="hgc-m-sub">end-to-end</span>${tgtLine(d.speed.local_e2e.p50,TARGETS.p50Local)}</div>
         </div>
@@ -247,7 +247,8 @@ function buildEventPool(hub){
     const hubAppLat=(t1&&t2)?Math.abs(t2-t1):null;
     add({hub,ts:e.ts,uc:e.uc||'—',dev:e.dev||'—',room:e.room||'—',
       src:e.src||'app',lat:e.lat,reason:null,net:e.net||'local',dock:'—',
-      status:lat>1000?'slow':lat>800?'warn':'ok',segType:'local_e2e',hasTiming:true,
+      status:lat>1000?'slow':lat>800?'warn':'ok',segType:'local_e2e',
+      hasTiming:!!(e.rest_resp&&e.ws_conf),
       tap:e.tap,cmd_sent:e.cmd_sent,rest_resp:e.rest_resp,ws_conf:e.ws_conf,
       hub_app_lat:hubAppLat})});
 
@@ -257,7 +258,8 @@ function buildEventPool(hub){
     const hubAppLat=(t1&&t2)?Math.abs(t2-t1):null;
     add({hub,ts:e.ts,uc:e.uc||'Remote App',dev:e.dev||'—',room:e.room||'—',
       src:e.src||'app_remote',lat:e.lat,reason:null,net:e.net||'remote',dock:'—',
-      status:lat>1000?'slow':lat>800?'warn':'ok',segType:'remote_e2e',hasTiming:true,
+      status:lat>1000?'slow':lat>800?'warn':'ok',segType:'remote_e2e',
+      hasTiming:!!(e.rest_resp&&e.ws_conf),
       tap:e.tap,cmd_sent:e.cmd_sent,rest_resp:e.rest_resp,ws_conf:e.ws_conf,
       hub_app_lat:hubAppLat})});
 
@@ -265,7 +267,8 @@ function buildEventPool(hub){
     const lat=parseFloat(e.lat)||0;
     add({hub,ts:e.ts,uc:e.uc||'—',dev:e.dev||'—',room:e.room||'—',
       src:'hub',lat:e.lat,reason:null,net:'thread',dock:'—',
-      status:lat>800?'slow':'ok',segType:'hub_snap',hasTiming:true,
+      status:lat>800?'slow':'ok',segType:'hub_snap',
+      hasTiming:!!(e.matter_ts&&e.snap_ts),
       matter_ts:e.matter_ts,snap_ts:e.snap_ts})});
 
   // All bucket events (including fast ones — gives broadest date coverage)
@@ -285,6 +288,20 @@ function buildEventPool(hub){
         src:e.src||'—',lat:e.lat,reason:null,net:'—',dock:'—',
         status:lat>1000?'slow':lat>800?'warn':'ok',segType:'per_uc',hasTiming:false})});
   });
+
+  // Observed Change events — no latency, so they never appear in the
+  // latency-filtered pools above; fetched separately by the backend
+  (d.observed_events||[]).forEach(e=>add({hub,ts:e.ts,uc:e.uc||'Observed Change (App)',
+    dev:e.dev||'—',room:e.room||'—',src:e.src||'direct_thread',lat:null,
+    reason:e.failure_reason||null,net:e.net||'—',dock:'—',
+    status:e.success===false?'fail':'ok',segType:'observed',hasTiming:false}));
+
+  // Hub-recorded scene activations & automation runs (from ha_logs) — the hub
+  // records these even when the app is closed, so this is the reliable record
+  (d.hub_observed_events||[]).forEach(e=>add({hub,ts:e.ts,uc:e.uc||'Observed (Hub)',
+    dev:e.dev||'—',room:e.room||'—',src:e.src||'direct_hub',lat:null,
+    reason:null,net:'hub',dock:'—',
+    status:'ok',segType:'hub_observed',hasTiming:false}));
 
   return events.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
 }
@@ -464,7 +481,7 @@ const LC_SEG_COLS={
       // ws_conf = app received state = end of WS push (snap_ts ≈ ws_conf from data)
       const snapTs=ev.snap_ts||'—';
       const wsConf=ev.ws_conf||ev.snap_ts||'—'; // ws_conf on matched local_e2e, snap_ts as fallback
-      const haLat=ev.hub_app_lat!=null?`${ev.hub_app_lat}ms`:'≈'+D[ev.hub]?.speed?.hub_app?.p50+'ms';
+      const haLat=ev.hub_app_lat!=null?`${ev.hub_app_lat}ms`:'—';
       const haC=ev.hub_app_lat>200?'var(--yellow)':'var(--green)';
       return`
       <td style="width:22px;text-align:center;color:var(--muted);font-size:11px;user-select:none">${isExp?'▾':'▸'}</td>
@@ -507,7 +524,7 @@ LC_SEG_COLS['remote_e2e']=LC_SEG_COLS['local_e2e']; // same columns, different c
 const DEFAULT_LC_HEAD=`<tr>
   <th style="width:22px"></th>
   <th>Timestamp</th><th>Hub</th><th>Use Case</th><th>Source</th><th>Device</th>
-  <th>Room</th><th>Speed</th><th>Status / Reason</th><th>Network</th>
+  <th>Room</th><th>Latency</th><th>Status / Reason</th><th>Network</th>
 </tr>`;
 const DEFAULT_LC_COLSPAN=10;
 
@@ -525,7 +542,7 @@ function renderLogCenter(){
     if(lcState.srcFilter)parts.push(`Source: ${lcState.srcFilter}`);
     if(lcState.ucFilter)parts.push(`Use Case: ${lcState.ucFilter}`);
     if(lcState.segFilter)parts.push(`Segment: ${lcState.segFilter}`);
-    if(lcState.latMin!==null)parts.push(`Speed: ${lcState.latMin}${lcState.latMax?'–'+lcState.latMax:'+'} ms`);
+    if(lcState.latMin!==null)parts.push(`Latency: ${lcState.latMin}${lcState.latMax?'–'+lcState.latMax:'+'} ms`);
     const desc=(lcState.context?.desc||'')+(parts.length?` · Filter — ${parts.join(' · ')}`: '');
     banner.innerHTML=`<div><div class="lc-context-label">${lcState.context?.label||'Filtered View'}</div><div class="lc-context-desc">${desc}</div></div>
       <button class="lc-context-clear" onclick="lcClearFilters()">Clear Filter</button>`;
@@ -631,7 +648,7 @@ function buildTimingExpand(ev){
     <div class="tp-fields">
       ${tpField('Timestamp',ev.ts)}${tpField('Hub',ev.hub?.toUpperCase())}${tpField('Use Case',ev.uc)}
       ${tpField('Device',ev.dev)}${tpField('Room',ev.room)}${tpField('Source',ev.src)}
-      ${tpField('Speed',ev.lat&&ev.lat!=='N/A'?ev.lat+'ms':'N/A')}${tpField('Network',ev.net)}
+      ${tpField('Latency',ev.lat&&ev.lat!=='N/A'?ev.lat+'ms':'N/A')}${tpField('Network',ev.net)}
       ${ev.dock&&ev.dock!=='—'?tpField('Dock',ev.dock):''}
       ${tpField('Failure Reason',`<span class="tag tag-red">${ev.reason||'—'}</span>`)}
     </div>`;
@@ -692,7 +709,7 @@ function buildTimingExpand(ev){
     html+=`<div class="tp-fields">
       ${tpField('Timestamp',ev.ts)}${tpField('Hub',ev.hub?.toUpperCase())}${tpField('Use Case',ev.uc)}
       ${tpField('Source',ev.src)}${tpField('Device',ev.dev)}${tpField('Room',ev.room)}
-      ${tpField('Speed',ev.lat?ev.lat+'ms':'—')}${tpField('Network',ev.net)}
+      ${tpField('Latency',ev.lat?ev.lat+'ms':'—')}${tpField('Network',ev.net)}
     </div>`;
   }
   html+='</div>';return html;
@@ -711,14 +728,13 @@ function tpSeg(ms,label,status){
 function renderDetail(hub){
   destroyCharts();const d=D[hub],f=d.total-d.success;
   const nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
-  const nsC=parseFloat(nsAvg)>=85?'var(--green)':parseFloat(nsAvg)>=70?'var(--yellow)':'var(--red)';
+  const nsC=parseFloat(nsAvg)>=95?'var(--green)':parseFloat(nsAvg)>=80?'var(--yellow)':'var(--red)';
   const kpiEl=document.getElementById('topKPIs');
-  kpiEl.style.gridTemplateColumns='repeat(6,1fr)';
+  kpiEl.style.gridTemplateColumns='repeat(5,1fr)';
   kpiEl.innerHTML=`
     <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[0],'overall')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Total Events<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_total')">ⓘ</button></div><div class="value">${d.total}</div><div class="sub">Click for daily trend</div></div>
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label">Total Devices</div><div class="value">${d.total_devices || 0}</div><div class="sub">Active in window</div></div>
     <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_reliability')">ⓘ</button></div><div class="value" style="color:${relColor(d.reliability)}">${d.reliability}%</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[1],'speed')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">P50 Speed<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_latency')">ⓘ</button></div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div><div class="sub">Click for speed drill-down</div></div>
+    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[1],'speed')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">P50 Latency<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_latency')">ⓘ</button></div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.speed.local_e2e.p50}ms</div><div class="sub">Click for speed drill-down</div></div>
     <div class="kpi" style="cursor:pointer" onclick="openLogCenter({hub:'${hub}',tab:'failures',context:{label:'${hub.toUpperCase()} — All Failures',desc:'${f} failures · ${activePeriodLabel()}'}})">
       <div class="label" style="display:flex;justify-content:space-between;align-items:center">Failures<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_failures')">ⓘ</button></div><div class="value" style="color:var(--red)">${f}</div>
       <div class="sub" style="color:var(--blue)">Click → Log Center</div></div>
@@ -732,14 +748,14 @@ function renderDetail(hub){
 // focus: 'events' | 'reliability' | 'ns'
 function showDayDebug(hub,dayIdx,focus){
   const d=D[hub],day=d.daily[dayIdx];if(!day)return;
-  const nsC=(day.ns||0)>85?'var(--green)':(day.ns||0)>70?'var(--yellow)':'var(--red)';
+  const nsC=(day.ns||0)>=95?'var(--green)':(day.ns||0)>=80?'var(--yellow)':'var(--red)';
   const relC=relColor(day.rel);
 
   const pool=buildEventPool(hub);
   const dayAll=pool.filter(e=>(e.ts||'').startsWith(day.date));
   const dayFails=dayAll.filter(e=>e.status==='fail');
   const dayNsMiss=dayAll.filter(e=>parseFloat(e.lat||0)>1000);
-  const cols=[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Speed'},{key:'reason',label:'Reason'}];
+  const cols=[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Latency'},{key:'reason',label:'Reason'}];
 
   const statBar=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
@@ -751,7 +767,7 @@ function showDayDebug(hub,dayIdx,focus){
       <div style="font-size:20px;font-weight:700;color:${relC}">${day.rel}%</div>
     </div>
     <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">P50 Speed</div>
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">P50 Latency</div>
       <div style="font-size:20px;font-weight:700;color:${day.p50>800?'var(--yellow)':'#e8edf5'}">${day.p50}ms</div>
     </div>
     <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
@@ -811,7 +827,7 @@ function showDayDebug(hub,dayIdx,focus){
 
 function renderOverall(d){
   const _nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
-  const _nsC=parseFloat(_nsAvg)>=85?'var(--green)':parseFloat(_nsAvg)>=70?'var(--yellow)':'var(--red)';
+  const _nsC=parseFloat(_nsAvg)>=95?'var(--green)':parseFloat(_nsAvg)>=80?'var(--yellow)':'var(--red)';
   const _nsBar=document.getElementById('nsKpiBar');
   if(_nsBar)_nsBar.innerHTML=`<div onclick="showHubNSModal('${activeHub}')" style="display:flex;align-items:center;gap:14px;padding:9px 14px;background:var(--bg);border-radius:6px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onmouseover="this.style.borderColor='var(--blue)'" onmouseout="this.style.borderColor='var(--border)'"><div style="font-size:26px;font-weight:700;color:${_nsC};line-height:1">${_nsAvg}%</div><div><div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:12px;color:#e8edf5;font-weight:600">Period Average</span>${tgtLine(parseFloat(_nsAvg),TARGETS.northStar)}</div><div style="font-size:9px;color:var(--blue);margin-top:3px">Click to see formula &amp; full breakdown →</div></div></div>`;
   const dates=d.daily.map(r=>r.date.slice(5));
@@ -831,7 +847,7 @@ function renderOverall(d){
 
   charts.ns=mc('nsChart',{type:'line',data:{labels:dates,datasets:[
     {label:'Sub-1s %',data:d.daily.map(r=>r.ns),borderColor:'#3d82f0',backgroundColor:'rgba(61,130,240,.1)',fill:true,tension:.3,pointRadius:3},
-    {label:'Target 85%',data:dates.map(()=>85),borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0}]},
+    {label:'Target 95%',data:dates.map(()=>95),borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       onClick:(e,els)=>{if(!els.length)return;showDayDebug(activeHub,els[0].index,'ns');},
       plugins:{tooltip:{filter:function(item){return item.datasetIndex===0;},callbacks:{label:function(ctx){return 'Sub-1s: '+ctx.parsed.y.toFixed(1)+'%'}}}},
@@ -846,36 +862,62 @@ function renderOverall(d){
     hm.innerHTML+=`<div class="heatmap-label">${day.slice(0,3)}</div>`;
     for(let h=0;h<24;h++){
       const k=`${day}_${h}`,v=d.heatmap[k]||0,intensity=v/maxV;
-      const bg=intensity>0?`rgba(239,83,80,${.08+intensity*.72})`:'#0c1018';
-      const det=d.heatmap_detail[k]||{events:0,failures:0,app:0,dock:0,remote:0,auto:0};
+      const bg=intensity>0?`rgba(61,130,240,${.08+intensity*.72})`:'#0c1018';
+      const det=d.heatmap_detail[k]||{app:0,dock:0,remote:0,auto:0};
       hm.innerHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
-        onmouseover="showHeatTip(this,'${day}',${h},${v},${det.events},${det.failures},${det.app},${det.dock},${det.remote},${det.auto})"
+        onmouseover="showHeatTip(this,'${day}',${h},${v},${det.app},${det.dock},${det.remote},${det.auto})"
         onmouseout="hideHeatTip(this)"
-        onclick="openLogCenter({hub:'${activeHub}',tab:'all',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v}% Fail Rate',desc:'Events: ${det.events} · Failures: ${det.failures}'}})">
-        ${v?v+'%':''}</div>`}});
+        onclick="openLogCenter({hub:'${activeHub}',tab:'all',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v} Events',desc:'App: ${det.app} · Dock: ${det.dock} · Remote: ${det.remote} · Observed: ${det.auto}'}})">
+        ${v||''}</div>`}});
+
+  // Failures heatmap — red scale
+  const fhm=document.getElementById('failHeatmapContainer');
+  if(fhm&&d.heatmap_fail){
+    fhm.innerHTML='';
+    fhm.innerHTML+='<div class="heatmap-label"></div>';
+    for(let h=0;h<24;h++)fhm.innerHTML+=`<div class="heatmap-label" style="text-align:center">${h}</div>`;
+    const fvals=Object.values(d.heatmap_fail),fmaxV=Math.max(...fvals,1);
+    days.forEach(day=>{
+      fhm.innerHTML+=`<div class="heatmap-label">${day.slice(0,3)}</div>`;
+      for(let h=0;h<24;h++){
+        const k=`${day}_${h}`,v=(d.heatmap_fail[k]||0),intensity=v/fmaxV;
+        const bg=intensity>0?`rgba(224,69,69,${.1+intensity*.8})`:'#0c1018';
+        fhm.innerHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
+          onmouseover="showFailHeatTip(this,'${day}',${h},${v})"
+          onmouseout="hideHeatTip(this)"
+          onclick="openLogCenter({hub:'${activeHub}',tab:'failures',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v} Failures',desc:'Failures in this time slot'}})">
+          ${v||''}</div>`}});
+  }
 }
 
-window.showHeatTip=function(el,day,h,v,ev,fail,app,dock,rem,auto){
+window.showHeatTip=function(el,day,h,v,app,dock,rem,auto){
   let tip=document.createElement('div');tip.className='tooltip-box';
-  tip.innerHTML=`<strong>${day} ${h}:00</strong><br>${v}% fail rate<hr style="border-color:var(--border);margin:4px 0">Events: ${ev} · Failures: ${fail}<br>App: ${app} · Dock: ${dock}<br>Remote: ${rem} · Auto: ${auto}<br><span style="font-size:9px;color:var(--blue)">Click → Log Center</span>`;
+  tip.innerHTML=`<strong>${day} ${h}:00</strong><br>${v} events<hr style="border-color:var(--border);margin:4px 0">App: ${app} · Dock: ${dock}<br>Remote: ${rem} · Observed: ${auto}<br><span style="font-size:9px;color:var(--blue)">Click → Log Center</span>`;
   el.style.position='relative';el.appendChild(tip);tip.style.position='absolute';tip.style.bottom='100%';tip.style.left='50%';tip.style.transform='translateX(-50%)'};
 window.hideHeatTip=function(el){const t=el.querySelector('.tooltip-box');if(t)t.remove()};
+window.showFailHeatTip=function(el,day,h,v){
+  let tip=document.createElement('div');tip.className='tooltip-box';
+  tip.innerHTML=`<strong>${day} ${h}:00</strong><br><span style="color:var(--red);font-weight:700">${v} failure${v!==1?'s':''}</span><br><span style="font-size:9px;color:var(--blue)">Click → Log Center</span>`;
+  el.style.position='relative';el.appendChild(tip);tip.style.position='absolute';tip.style.bottom='100%';tip.style.left='50%';tip.style.transform='translateX(-50%)';};
 
 // ═══════════════════════════════════════════════════════════
 //  SECTION 4 — SPEED TAB
 // ═══════════════════════════════════════════════════════════
 function renderSpeed(d){
   const s=d.speed;
-  const maxBar=Math.max(s.hub_snap_hub.p50||1,48,s.local_e2e.p50||1,s.remote_e2e.p50||1);
 
-  // Derive Hub→App events: ws_conf - rest_resp from local_e2e events
+  // Hub→App stats (avg/p50/p95) come from the backend, computed over ALL
+  // ws_conf − rest_resp diffs in the selected period. The per-event list below
+  // is derived from the recent samples and used only for the modal's table.
   const hubAppEvents=(s.local_e2e?.events||[]).map(e=>{
     const t1=tsMs(e.rest_resp),t2=tsMs(e.ws_conf);
-    const pushLat=(t1&&t2)?Math.abs(t2-t1):null;
+    const pushLat=(t1&&t2&&t2>=t1)?(t2-t1):null;
     return{ts:e.ts,dev:e.dev,uc:e.uc,room:e.room,
       hub_dispatched:e.rest_resp,app_confirmed:e.ws_conf,
       lat:pushLat!==null?String(pushLat):null};
   }).filter(e=>e.lat!==null);
+
+  const maxBar=Math.max(s.hub_snap_hub.p50||1,s.hub_app.p50||1,48,s.local_e2e.p50||1);
 
   const segs=[
     {key:'hub_snap_hub',name:'Hub → SNAP → Hub',desc:'App triggers hub → hub issues Matter cmd over Thread mesh → SNAP device activates → state reflected back to hub',val:s.hub_snap_hub,color:'var(--green)',target:TARGETS.hubSnap,
@@ -883,25 +925,42 @@ function renderSpeed(d){
     {key:'hub_app',name:'Hub → App (WebSocket Push)',desc:'Device state confirmed at hub (snap_ts) → hub immediately pushes via WebSocket → app reflects new state. P50: '+s.hub_app.p50+'ms',val:s.hub_app,color:'var(--blue)',target:TARGETS.hubApp,
      derivedEvents:hubAppEvents,
      cols:[{key:'ts',label:'Event Time'},{key:'hub_dispatched',label:'State Confirmed at Hub'},{key:'app_confirmed',label:'App Received (ws_conf)'},{key:'lat',label:'Push (ms)'},{key:'dev',label:'Device'},{key:'room',label:'Room'}]},
-    {key:'local_e2e',name:'Local E2E (App → Hub → Device → Hub → App)',desc:'Full round-trip: App sends cmd → Hub receives → SNAP device activates → state pushed back to app via WebSocket (Wi-Fi)',val:s.local_e2e,color:'var(--purple)',target:TARGETS.localE2e,
+    {key:'local_e2e',name:'App Control (Local)',desc:'Full round-trip on local Wi-Fi: App sends cmd → Hub receives → SNAP device activates → state pushed back to app via WebSocket',val:s.local_e2e,color:'var(--purple)',target:TARGETS.localE2e,
      cols:[{key:'ts',label:'Tap Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'cmd_sent',label:'CMD Sent'},{key:'rest_resp',label:'Hub ACK\'d'},{key:'ws_conf',label:'App Updated'},{key:'lat',label:'E2E (ms)'}]},
-    {key:'remote_e2e',name:'Remote E2E (App → Hub → Device → Hub → App)',desc:'Full round-trip via Internet: App sends cmd remotely → Hub receives → SNAP device activates → state pushed back to app via WebSocket',val:s.remote_e2e,color:'var(--yellow)',target:TARGETS.remoteE2e,
+    {key:'remote_e2e',name:'App Control (Remote)',desc:'Full round-trip via Internet: App sends cmd remotely → Hub receives → SNAP device activates → state pushed back to app via WebSocket',val:s.remote_e2e,color:'var(--yellow)',target:TARGETS.remoteE2e,
      cols:[{key:'ts',label:'Tap Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'cmd_sent',label:'CMD Sent'},{key:'rest_resp',label:'Hub ACK\'d'},{key:'ws_conf',label:'App Updated'},{key:'lat',label:'E2E (ms)'}]}
   ];
 
   const el=document.getElementById('speedSegments');el.innerHTML='';
   segs.forEach(sg=>{
-    const pct=Math.min((sg.val.p50/maxBar)*100,100);
-    const isSlow=sg.target?sg.val.p50>sg.target.val:sg.val.p50>800;
+    const noData=sg.val.p50===0&&sg.val.avg===0;
+    const pct=noData?0:Math.min((sg.val.p50/maxBar)*100,100);
+    const isSlow=!noData&&(sg.target?sg.val.p50>sg.target.val:sg.val.p50>800);
     const div=document.createElement('div');div.className='speed-segment';
+    const valHtml=noData
+      ?`<div style="font-size:11px;color:var(--muted);font-style:italic">${sg.key==='remote_e2e'?'Not tracked':'No data'}</div>`
+      :`<div class="seg-val" style="color:${isSlow?'var(--yellow)':'#e8edf5'}">${sg.val.p50}ms</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px">P50 · ${tgtLine(sg.val.p50,sg.target)}</div>`;
     div.innerHTML=`<div class="seg-name"><strong>${sg.name}</strong><br><span style="color:var(--muted);font-size:9px">${sg.desc}</span></div>
-      <div class="seg-bar"><div class="seg-fill" style="width:${pct}%;background:${isSlow?'var(--yellow)':sg.color}"></div></div>
-      <div style="text-align:right;min-width:105px">
-        <div class="seg-val" style="color:${isSlow?'var(--yellow)':'#e8edf5'}">${sg.val.p50}ms</div>
-        <div style="font-size:9px;color:var(--muted);margin-top:2px">P50 · ${tgtLine(sg.val.p50,sg.target)}</div>
-      </div>`;
+      <div class="seg-bar"><div class="seg-fill" style="width:${pct}%;background:${isSlow?'var(--yellow)':sg.color};opacity:${noData?0.2:1}"></div></div>
+      <div style="text-align:right;min-width:105px">${valHtml}</div>`;
     div.onclick=()=>{
       const row=(l,v)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0;white-space:nowrap">${l}</td><td>${v}</td></tr>`;
+      // No-data segments: explain WHY instead of showing stats/samples that would mislead
+      if(noData){
+        const why=sg.key==='remote_e2e'
+          ?'No remote-control events were recorded in this period. This segment will populate once devices are controlled from outside the home network.'
+          :'The hub is not recording timing values for this segment yet — every event reports 0ms (matter_command_ts and snap_state_change_ts carry identical timestamps). This is a hub-side data collection gap, not a dashboard issue. Latency stats will appear automatically once the hub firmware records real timestamps.';
+        showModal(sg.name+' — No Data',`
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px;font-size:11px;color:var(--muted);line-height:1.7">
+            <strong style="color:#e8edf5">${sg.name}</strong><br>${sg.desc}
+          </div>
+          <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:12px 16px;font-size:11px;line-height:1.7">
+            <strong style="color:var(--yellow)">Why is there no data?</strong><br>
+            <span style="color:var(--muted)">${why}</span>
+          </div>`);
+        return;
+      }
       let body=`<table style="font-size:12px;margin-bottom:14px">
         ${row('Segment',`<strong>${sg.name}</strong>`)}${row('Description',sg.desc)}
         ${row('Avg',sg.val.avg+'ms')}${row('P50',`<strong style="font-size:16px;color:${isSlow?'var(--yellow)':'#e8edf5'}">${sg.val.p50}ms</strong>`)}
@@ -927,25 +986,25 @@ function renderSpeed(d){
   });
 
   const b=s.buckets,bk=Object.keys(b);
-  const bucketColors=['#1fa355','#1fa355','#3d82f0','#d4961f','#d4961f','#e04545'];
+  const bucketColors=['#1fa355','#d4961f','#e07a20','#e04545','#b02a2a'];
   charts.latDist=mc('latDistChart',{type:'bar',data:{labels:bk,datasets:[{label:'Events',data:Object.values(b),backgroundColor:bucketColors,borderRadius:2}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
       onClick:(e,els)=>{if(!els.length)return;
         const k=bk[els[0].index],evs=s.bucket_events[k],isProblematic=k.includes('800')||k.includes('>1000')||k.includes('600');
         const row=(l,v)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0">${l}</td><td>${v}</td></tr>`;
         let body=`<table style="font-size:12px;margin-bottom:14px">
-          ${row('Speed Range',`<strong>${k}ms</strong>`)}
+          ${row('Latency Range',`<strong>${k}ms</strong>`)}
           ${row('Event Count',`<strong>${b[k]}</strong>`)}
           ${isProblematic?row('Assessment',`<span style="color:var(--red)">Above 600ms — degraded user experience</span>`):''}
         </table>`;
         if(evs&&evs.length){
           body+=`<div class="dbg-section-hdr" style="margin-bottom:8px">
             <span class="dbg-section-title">Sample Events</span>
-            <button class="dbg-lc-link" onclick="(()=>{const f=parseBucketFilter('${k}');closeModal();openLogCenter(Object.assign({hub:'${activeHub}',tab:'all',context:{label:'Speed ${k}ms — ${b[k]} events',desc:'${activeHub.toUpperCase()} · ${b[k]} events in this speed range'}},f))})()">View in Log Center →</button>
-          </div>`+evTable(evs,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'src',label:'Source'},{key:'lat',label:'Speed'},{key:'room',label:'Room'}]);
+            <button class="dbg-lc-link" onclick="(()=>{const f=parseBucketFilter('${k}');closeModal();openLogCenter(Object.assign({hub:'${activeHub}',tab:'all',context:{label:'Latency ${k}ms — ${b[k]} events',desc:'${activeHub.toUpperCase()} · ${b[k]} events in this latency range'}},f))})()">View in Log Center →</button>
+          </div>`+evTable(evs,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'src',label:'Source'},{key:'lat',label:'Latency'},{key:'room',label:'Room'}]);
         }
-        showModal(`Speed ${k}ms — ${b[k]} Events`,body)},
-      scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},x:{title:{display:true,text:'Speed Range (ms)'}}}}});
+        showModal(`Latency ${k}ms — ${b[k]} Events`,body)},
+      scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},x:{title:{display:true,text:'Latency Range (ms)'}}}}});
 
   renderUCCards(s.per_uc);
 }
@@ -971,7 +1030,7 @@ function renderUCCards(perUc){
     const bkTotal=BKTS.reduce((s,b)=>s+(bkts[b.k]||0),0)||1;
     const under1k=(bkts['<500ms']||0)+(bkts['500-1000ms']||0);
     const sub1sPct=bkTotal>1?((under1k/bkTotal)*100).toFixed(0):0;
-    const sub1sC=sub1sPct>=85?'var(--green)':sub1sPct>=70?'var(--yellow)':'var(--red)';
+    const sub1sC=sub1sPct>=95?'var(--green)':sub1sPct>=80?'var(--yellow)':'var(--red)';
 
     const barSegs=BKTS.map(b=>{
       const cnt=bkts[b.k]||0;if(!cnt)return'';
@@ -988,7 +1047,7 @@ function renderUCCards(perUc){
     card.className='uc-card';
     card.innerHTML=`
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
-        <div style="font-size:12px;font-weight:600;color:#e8edf5;line-height:1.3;padding-right:8px">${uc}</div>
+        <div style="font-size:12px;font-weight:600;color:#e8edf5;line-height:1.3;padding-right:8px">${ucLabel(uc)}</div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
           <button class="info-btn" onclick="event.stopPropagation();showInfo('uc_speed_metrics')" title="What do these numbers mean?">ⓘ</button>
           <span class="tag ${sc}">${st}</span>
@@ -1032,22 +1091,32 @@ function renderUCCards(perUc){
   });
 }
 
+// Display-name mapping for use_case values — data keys stay raw so filters work
+function ucLabel(uc){
+  if(uc==='Docklet Press (App)')return'Docklet Press (Observed from App)';
+  if(uc==='Local App Control')return'App Control (Local)';
+  if(uc==='Remote App Control')return'App Control (Remote)';
+  return uc;
+}
+
 // Named function — avoids closure/scope issues in onclick attributes
 const UC_DESC={
-  'App Control':'User controls device via mobile app over local Wi-Fi — App Tap → REST to Hub → SNAP device → WS push back to App',
-  'Dock Control':'User presses physical dock button → signal traverses Thread mesh → Hub receives → SNAP device activates',
-  'Remote App':'User controls device via mobile app over the Internet — same flow as App Control but routed remotely',
-  'Automation':'Automated/scheduled trigger via direct Thread command — no user interaction, hub-initiated'
+  'Local App Control':'User controls device via mobile app over local Wi-Fi — App Tap → REST to Hub → SNAP device → WS push back to App',
+  'Device Bind (App)':'User commissions or binds a device from the app — App → Hub (HA) → SNAP → WebSocket → App',
+  'Docklet Press (App)':'User presses a physical dock button → Hub processes it → the app observes and records the resulting state change with its timing',
+  'Remote App Control':'User controls device via mobile app over the Internet — same flow as local control but routed remotely',
+  'Observed Change (App)':'State change the app observed but did not initiate — dock presses, automations, scene activations, manual switches'
 };
 
 window.showUCDetail=function(uc){
   const hub=activeHub,v=D[hub]?.speed?.per_uc?.[uc];if(!v)return;
   const desc=UC_DESC[uc]||uc;
+  const lbl=ucLabel(uc);
   const row=(l,val)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0;white-space:nowrap">${l}</td><td>${val}</td></tr>`;
-  const lcOpts={hub,tab:'all',ucFilter:uc,context:{label:`${uc} — Events`,desc:`${hub.toUpperCase()} · P50: ${v.p50}ms · P95: ${v.p95}ms · ${v.count} total`}};
+  const lcOpts={hub,tab:'all',ucFilter:uc,context:{label:`${lbl} — Events`,desc:`${hub.toUpperCase()} · P50: ${v.p50}ms · P95: ${v.p95}ms · ${v.count} total`}};
   const stddevC=v.stddev>500?'var(--red)':v.stddev>200?'var(--yellow)':'var(--green)';
   let body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--muted);line-height:1.6">
-    <strong style="color:#e8edf5">${uc}</strong><br>${desc}
+    <strong style="color:#e8edf5">${lbl}</strong><br>${desc}
   </div>
   <table style="font-size:12px;margin-bottom:14px">
     ${row('Total Events',`<strong style="font-size:16px">${v.count}</strong>`)}
@@ -1059,12 +1128,12 @@ window.showUCDetail=function(uc){
   if(v.events&&v.events.length){
     body+=`<div class="dbg-section-hdr" style="margin-bottom:8px">
       <span class="dbg-section-title">Sample Events (${v.events.length} of ${v.count})</span>
-      <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all ${uc} in Log Center →</button>
-    </div>`+evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'lat',label:'Speed (ms)'},{key:'src',label:'Source'},{key:'room',label:'Room'}]);
+      <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all ${lbl} in Log Center →</button>
+    </div>`+evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'lat',label:'Latency (ms)'},{key:'src',label:'Source'},{key:'room',label:'Room'}]);
   } else {
-    body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${uc} events in Log Center →</button></div>`;
+    body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${lbl} events in Log Center →</button></div>`;
   }
-  showModal(uc+' — Speed Detail',body);
+  showModal(lbl+' — Speed Detail',body);
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -1115,7 +1184,7 @@ function renderReliability(d){
   if(r.src_rel){Object.entries(r.src_rel).forEach(([src,v])=>{
     const rc=relTag(v.rel);const hasFails=v.fail>0;
     srt.innerHTML+=`<tr class="clickable" onclick="showSrcRelModal('${src}',${v.total},${v.success},${v.fail},${v.rel})">
-      <td><strong>${src}</strong></td><td>${v.total}</td><td style="color:var(--green)">${v.success}</td>
+      <td><strong>${ucLabel(src)}</strong></td><td>${v.total}</td><td style="color:var(--green)">${v.success}</td>
       <td style="color:${hasFails?'var(--red)':'inherit'};font-weight:${hasFails?600:400}">${v.fail}</td>
       <td><span class="tag ${rc}">${v.rel}%</span></td>
       <td style="font-size:10px;color:var(--blue)">${hasFails?'View failures →':'No failures'}</td>
@@ -1140,37 +1209,23 @@ function renderReliability(d){
     <td><span class="tag tag-red">${reason}</span></td><td style="font-weight:600;color:var(--red)">${v.count}</td>
     <td style="color:var(--blue);font-size:10px">Inspect events →</td></tr>`})}
 
-  const fdt=document.getElementById('failDevTable');
-  const fdtHead=fdt.previousElementSibling;
-  fdt.innerHTML='';
-  if(d.fail_by_device){
-    const reasonsArray = ['DEVICE_OFFLINE', 'NO_RESPONSE', 'THREAD_MESH_FAIL', 'TIMEOUT'];
-    
-    let thHTML = `<tr><th>Device</th><th>Count</th>`;
-    reasonsArray.forEach(r => thHTML += `<th>${r}</th>`);
-    thHTML += `<th>Action</th></tr>`;
-    if(fdtHead) fdtHead.innerHTML = thHTML;
-
-    Object.entries(d.fail_by_device).sort((a,b)=>b[1].count-a[1].count).forEach(([dev,v])=>{
-      const reasonsStr=Object.entries(v.reasons).map(([r,c])=>`${r}:${c}`).join(', ');
-      let tdHTML = `<tr class="clickable" onclick="showDevFailModal('${dev}',${v.count},'${reasonsStr}')">
-      <td style="font-family:monospace;font-size:10px">${dev}</td>
-      <td style="font-weight:600;color:var(--red)">${v.count}</td>`;
-      reasonsArray.forEach(r => {
-        const c = v.reasons[r] || 0;
-        tdHTML += `<td style="font-size:10px;color:var(--muted)">${c > 0 ? c : '-'}</td>`;
-      });
-      tdHTML += `<td style="font-size:10px;color:var(--blue)">Inspect →</td></tr>`;
-      fdt.innerHTML += tdHTML;
-    });
-  }
+  const _FAIL_REASONS=['NO_RESPONSE','TIMEOUT','DEVICE_OFFLINE','THREAD_MESH_FAIL'];
+  const fdt=document.getElementById('failDevTable');fdt.innerHTML='';
+  if(d.fail_by_device){Object.entries(d.fail_by_device).sort((a,b)=>b[1].count-a[1].count).forEach(([dev,v])=>{
+    const reasons=Object.entries(v.reasons).map(([r,c])=>`${r}:${c}`).join(', ');
+    const rCells=_FAIL_REASONS.map(r=>{const c=v.reasons[r]||0;return`<td style="text-align:center;font-weight:${c>0?700:400};color:${c>0?'var(--red)':'var(--muted)'}">${c}</td>`;}).join('');
+    fdt.innerHTML+=`<tr class="clickable" onclick="showDevFailModal('${dev}',${v.count},'${reasons}')">
+    <td style="font-family:monospace;font-size:10px">${dev}</td>
+    <td style="font-weight:600;color:var(--red);text-align:center">${v.count}</td>
+    ${rCells}
+    <td style="font-size:10px;color:var(--blue)">Inspect →</td></tr>`})}
 
   const dat=document.getElementById('devActivityTable');if(dat){
     dat.innerHTML='';
     if(d.devices&&d.devices.length){
       d.devices.forEach(dev=>{
         const rc=relTag(dev.rel);
-        const failC=Math.round(dev.total*(100-dev.rel)/100);
+        const failC=dev.total-dev.success;
         const devShort=(dev.id||'').replace('light.snap_','').replace('switch.snap_','');
         dat.innerHTML+=`<tr class="clickable" onclick="showDevModal('${dev.id}','${dev.room}',${dev.total},${dev.rel},${dev.p50},${failC})">
           <td style="font-size:10px;font-family:monospace">${devShort}</td>
@@ -1188,30 +1243,31 @@ function renderReliability(d){
 
 window.showSrcRelModal=function(src,total,success,fail,rel){
   const hub=activeHub;
+  const lbl=ucLabel(src);
   const pred=srcPred(src);
   const fails=failuresFor(hub,pred);
   const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
   let body=`<table style="font-size:12px;margin-bottom:4px">
-    ${row('Source',`<strong>${src}</strong>`)}
+    ${row('Source',`<strong>${lbl}</strong>`)}
     ${row('Total Events',`<strong style="font-size:16px">${total}</strong>`)}
     ${row('Successful',`<strong style="color:var(--green)">${success}</strong>`)}
     ${row('Failed',`<strong style="color:var(--red);font-size:16px">${fail}</strong>`)}
     ${row('Reliability',`<strong style="color:${relColor(rel)};font-size:16px">${rel}%</strong>`)}
   </table>`;
   if(fail>0){
-    const lcOpts={hub,tab:'failures',srcFilter:src,context:{label:`Failures — ${src}`,desc:`${fail} failed events from ${src} on ${hub.toUpperCase()}`}};
+    const lcOpts={hub,tab:'failures',srcFilter:src,context:{label:`Failures — ${lbl}`,desc:`${fail} failed events from ${lbl} on ${hub.toUpperCase()}`}};
     body+=`<div class="dbg-section">
       <div class="dbg-section-hdr">
-        <span class="dbg-section-title">Failure Events for ${src} (${fails.length})</span>
+        <span class="dbg-section-title">Failure Events for ${lbl} (${fails.length})</span>
         <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all in Log Center →</button>
       </div>
-      ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}
+      ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}
       ${fails.length>10?`<p style="font-size:10px;color:var(--muted);margin-top:6px">Showing 10 of ${fails.length}.</p>`:''}
     </div>`;
   } else {
     body+=`<div class="dbg-section"><div class="dbg-empty">No failures for this source.</div></div>`;
   }
-  showModal(`${src} — Reliability Debug`,body);
+  showModal(`${lbl} — Reliability Debug`,body);
 };
 
 window.showReasonModal=function(reason,count){
@@ -1231,7 +1287,7 @@ window.showReasonModal=function(reason,count){
         <span class="dbg-section-title">Events with this failure (${v.events.length} samples)</span>
         <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all in Log Center →</button>
       </div>
-      ${evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Speed'}])}
+      ${evTable(v.events,[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Latency'}])}
     </div>`;
   }
   showModal(`${reason} — Failure Analysis`,body);
@@ -1252,7 +1308,7 @@ window.showDevFailModal=function(dev,count,reasons){
       <span class="dbg-section-title">Failure Events (${fails.length})</span>
       <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all in Log Center →</button>
     </div>
-    ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}
+    ${evTable(fails.slice(0,10),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}
     ${fails.length>10?`<p style="font-size:10px;color:var(--muted);margin-top:6px">Showing 10 of ${fails.length}.</p>`:''}
   </div>`;
   showModal(`Device Failures — ${dev.replace('light.snap_','').replace('switch.snap_','')}`,body);
@@ -1269,7 +1325,7 @@ window.showFailModal=function(idx){
     ${row('Timestamp',`<span style="font-family:monospace">${f.ts}</span>`)}
     ${row('Use Case',f.uc)}${row('Device',`<span style="font-family:monospace">${f.dev}</span>`)}
     ${row('Room',f.room)}${row('Source',f.src)}${row('Network',f.net||'—')}
-    ${row('Speed',f.lat&&f.lat!=='N/A'?`<span style="color:var(--red);font-weight:600">${f.lat}ms</span>`:'N/A')}
+    ${row('Latency',f.lat&&f.lat!=='N/A'?`<span style="color:var(--red);font-weight:600">${f.lat}ms</span>`:'N/A')}
     ${f.dock&&f.dock!=='—'?row('Dock',f.dock):''}
   </table>
   <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View all ${f.reason} failures in Log Center →</button></div>`;
@@ -1295,7 +1351,7 @@ function showRelModal(type){
     <div class="dbg-section"><div class="dbg-section-hdr">
       <span class="dbg-section-title">App Failure Events (${fails.length})</span>
       <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View in Log Center →</button>
-    </div>${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}</div>`;
+    </div>${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}</div>`;
 
   } else if(type==='dock_trigger'){
     title='Dock Trigger Reliability — Debug';
@@ -1359,13 +1415,15 @@ function showDockStatModal(ds){
 //  SECTION 6 — USAGE TAB
 // ═══════════════════════════════════════════════════════════
 function renderUsage(d){
-  const u=d.usage||{app:0,remote:0,docklet:0,direct:0,app_ratio:0,dock_ratio:0,scene_per_day:0};
+  const u=d.usage||{app:0,remote:0,docklet:0,direct:0,app_ratio:0,dock_ratio:0,observed_per_day:0,scene_per_day:0,scene_total:0,snap_devices:0};
   const hTotal=(u.app||0)+(u.docklet||0);
   document.getElementById('usageKPIs').innerHTML=`
-    <div class="kpi" onclick="showUsageModal('auto')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Automation / Day<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_auto')">ⓘ</button></div><div class="value">${u.scene_per_day||0}</div><div class="formula-ref">= ${u.direct||0} ÷ ${activeDaysCount()} days</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('auto')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Automation / Day<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_auto')">ⓘ</button></div><div class="value">${u.hub_auto_per_day||0}</div><div class="formula-ref">= ${u.hub_auto_total||0} hub-recorded ÷ ${activeDaysCount()} days</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('scene')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Scene / Day<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_scene')">ⓘ</button></div><div class="value">${u.hub_scene_per_day||0}</div><div class="formula-ref">= ${u.hub_scene_total||0} hub-recorded ÷ ${activeDaysCount()} days</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('devices')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Active SNAP Devices<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_snap_devices')">ⓘ</button></div><div class="value">${u.snap_devices||0}</div><div class="formula-ref">Physical devices active this period</div><div class="sub">Click for device list</div></div>
     <div class="kpi" onclick="showUsageModal('app')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">App Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_app')">ⓘ</button></div><div class="value">${u.app_ratio||0}%</div><div class="formula-ref">= ${u.app||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
     <div class="kpi" onclick="showUsageModal('dock')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Dock Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_dock')">ⓘ</button></div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>`;
-  const srcLabels=['App (Local)','Remote App','Dock Control','Automation'];
+  const srcLabels=['App (Local)','Remote App','Dock Control','Observed Change'];
   charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,u.direct||0],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f'],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
       onClick:(e,els)=>{if(!els.length)return;
@@ -1415,7 +1473,7 @@ window.showDevModal=function(id,room,total,rel,p50,fail){
   let body=`<table style="font-size:12px;margin-bottom:4px">
     ${row('Device',`<strong style="font-family:monospace">${id}</strong>`)}${row('Room',room)}
     ${row('Total Events',total)}${row('Reliability',`<strong style="color:${relColor(rel)};font-size:16px">${rel}%</strong>`)}
-    ${row('P50 Speed',`<span style="color:${p50>800?'var(--yellow)':'#e8edf5'}">${p50}ms</span>`)}
+    ${row('P50 Latency',`<span style="color:${p50>800?'var(--yellow)':'#e8edf5'}">${p50}ms</span>`)}
     ${row('Failures',`<strong style="color:var(--red);font-size:16px">${fail}</strong>`)}
   </table>`;
   if(fail>0){
@@ -1424,7 +1482,7 @@ window.showDevModal=function(id,room,total,rel,p50,fail){
         <span class="dbg-section-title">Failure Events (${fails.length})</span>
         <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View in Log Center →</button>
       </div>
-      ${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Speed'}])}
+      ${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}
     </div>`;
   } else {
     body+=`<div class="dbg-section"><div class="dbg-empty">No failures recorded for this device.</div></div>`;
@@ -1437,20 +1495,29 @@ window.showUsageModal=function(type){
   const u=d.usage||{};
   const app=u.app||0,docklet=u.docklet||0,remote=u.remote||0,direct=u.direct||0;
   const total=app+docklet+remote+direct,hTotal=app+docklet;
-  const app_ratio=u.app_ratio||0,dock_ratio=u.dock_ratio||0,scene_per_day=u.scene_per_day||0;
+  const app_ratio=u.app_ratio||0,dock_ratio=u.dock_ratio||0;
+  const observed_per_day=u.observed_per_day||0,scene_per_day=u.scene_per_day||0,scene_total=u.scene_total||0;
   const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
   let title='',body='',lcOpts=null;
   if(type==='auto'){
     title='Automation / Day';
-    lcOpts={hub,tab:'all',srcFilter:'Automation',context:{label:'Automation Events',desc:`${hub.toUpperCase()} · ${direct} automation triggers · 30-day window`}};
-    body=`<table style="font-size:12px">${row('Formula','Automation Events ÷ 30 days')}${row('Total Automation',`<strong style="font-size:16px">${direct}</strong>`)}${row('Per Day',`<strong>${scene_per_day}</strong>`)}${row('% of All Events',total>0?`${(direct/total*100).toFixed(1)}%`:'0%')}</table>`;
+    lcOpts={hub,tab:'all',ucFilter:'Automation Run (Hub)',context:{label:'Hub-Recorded Automation Runs',desc:`${hub.toUpperCase()} · ${u.hub_auto_total||0} runs from ha_logs · ${activePeriodLabel()}`}};
+    body=`<table style="font-size:12px">${row('Formula','Hub-recorded automation runs ÷ days in period')}${row('Hub-recorded runs (tile value)',`<strong style="font-size:16px">${u.hub_auto_total||0}</strong> <span style="font-size:10px;color:var(--muted)">ha_logs automation_triggered — recorded even when the app is closed</span>`)}${row('Per Day',`<strong>${u.hub_auto_per_day||0}</strong>`)}${row('Why hub-recorded?',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">The app only observes changes while it is open, so its automation counts are inconsistent. The hub records every run.</span>`)}</table>`;
+  } else if(type==='scene'){
+    title='Scene / Day';
+    lcOpts={hub,tab:'all',ucFilter:'Scene Activated (Hub)',context:{label:'Hub-Recorded Scene Activations',desc:`${hub.toUpperCase()} · ${u.hub_scene_total||0} activations from ha_logs · ${activePeriodLabel()}`}};
+    body=`<table style="font-size:12px">${row('Formula','Hub-recorded scene activations ÷ days in period')}${row('Hub-recorded activations (tile value)',`<strong style="font-size:16px">${u.hub_scene_total||0}</strong> <span style="font-size:10px;color:var(--muted)">ha_logs scene call_service — recorded even when the app is closed</span>`)}${row('Per Day',`<strong>${u.hub_scene_per_day||0}</strong>`)}${row('Why hub-recorded?',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">The app only observes activations while it is open and can log state-refresh bursts as activations, so its scene counts are inconsistent. The hub records every activation.</span>`)}</table>`;
+  } else if(type==='devices'){
+    title='Active SNAP Devices';
+    lcOpts={hub,tab:'all',context:{label:'All Device Events',desc:`${hub.toUpperCase()} · all physical SNAP device activity`}};
+    body=`<table style="font-size:12px">${row('Count',`<strong style="font-size:20px">${u.snap_devices||0}</strong>`)}${row('What counts','Physical SNAP-connected devices that had at least one event in this period')}${row('Excluded','scene.*, automation.*, script.*, group.* entities — only light, switch, fan domains count')}</table>`;
   } else if(type==='app'){
     title='App Usage Ratio';
-    lcOpts={hub,tab:'all',srcFilter:'App Control',context:{label:'App (Local) Events',desc:`${hub.toUpperCase()} · ${app} local app events · 30-day window`}};
+    lcOpts={hub,tab:'all',srcFilter:'App Control',context:{label:'App (Local) Events',desc:`${hub.toUpperCase()} · ${app} local app events · ${activePeriodLabel()}`}};
     body=`<table style="font-size:12px">${row('Formula','App ÷ (App + Dock)')}${row('App Events',`<strong style="font-size:16px;color:var(--blue)">${app}</strong>`)}${row('Dock Events',docklet)}${row('Ratio',`<strong style="font-size:16px;color:var(--blue)">${app_ratio}%</strong>`)}</table>`;
   } else {
     title='Dock Usage Ratio';
-    lcOpts={hub,tab:'all',srcFilter:'Dock Control',context:{label:'Dock Control Events',desc:`${hub.toUpperCase()} · ${docklet} dock events · 30-day window`}};
+    lcOpts={hub,tab:'all',srcFilter:'Dock Control',context:{label:'Dock Control Events',desc:`${hub.toUpperCase()} · ${docklet} dock events · ${activePeriodLabel()}`}};
     body=`<table style="font-size:12px">${row('Formula','Dock ÷ (App + Dock)')}${row('Dock Events',`<strong style="font-size:16px;color:var(--green)">${docklet}</strong>`)}${row('App Events',app)}${row('Ratio',`<strong style="font-size:16px;color:var(--green)">${dock_ratio}%</strong>`)}</table>`;
   }
   body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${title} in Log Center →</button></div>`;
@@ -1493,11 +1560,11 @@ function showFleetModal(type){
     <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter({tab:'failures',context:{label:'All Fleet Failures',desc:'${fFail} failures across all hubs'}})">View All Fleet Failures →</button></div>`;
 
   } else if(type==='latency'){
-    title='Fleet P50 Speed — Debug View';
+    title='Fleet P50 Latency — Debug View';
     body=`<table style="font-size:12px;margin-bottom:4px">
       ${row('Fleet Avg P50',`<strong style="font-size:18px">${fP50}ms</strong>`)}
     </table>
-    <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub Speed</span></div>
+    <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub Latency</span></div>
     <table style="font-size:11px"><thead><tr><th>Hub</th><th>P50</th><th>Status</th><th>Action</th></tr></thead><tbody>
     ${fLatencies.map(l=>{const isSlow=l.p50>800;
       return`<tr><td><strong>${l.hub.toUpperCase()}</strong></td>
@@ -1509,17 +1576,17 @@ function showFleetModal(type){
 
   } else if(type==='northstar'){
     title='Fleet North Star — Sub-1s Rate';
-    const nsGap=(85-parseFloat(fNSavg)).toFixed(1);
-    body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px"><div style="font-size:11px;color:var(--muted);line-height:1.7"><strong style="color:#e8edf5">What is North Star?</strong><br>The percentage of all device control events completed end-to-end in under 1 second. This is the single most user-facing quality metric — anything over 1s feels like lag to the user. Target: ≥ 85%.</div><div style="font-size:10px;font-family:monospace;background:var(--surface2);border:1px solid var(--border2);padding:8px 12px;border-radius:4px;color:var(--blue);margin-top:10px">NS = ROUND(100 × COUNT(latency_ms &lt; 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div></div>
+    const nsGap=(95-parseFloat(fNSavg)).toFixed(1);
+    body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px"><div style="font-size:11px;color:var(--muted);line-height:1.7"><strong style="color:#e8edf5">What is North Star?</strong><br>The percentage of all device control events completed end-to-end in under 1 second. This is the single most user-facing quality metric — anything over 1s feels like lag to the user. Target: ≥ 95%.</div><div style="font-size:10px;font-family:monospace;background:var(--surface2);border:1px solid var(--border2);padding:8px 12px;border-radius:4px;color:var(--blue);margin-top:10px">NS = ROUND(100 × COUNT(latency_ms &lt; 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div></div>
     <table style="font-size:12px;margin-bottom:14px">
-      ${row('Fleet North Star',`<strong style="font-size:20px;color:${fNSavg>85?'var(--green)':fNSavg>70?'var(--yellow)':'var(--red)'}">${fNSavg}%</strong>`)}
-      ${row('Target','<strong style="color:var(--green)">≥ 85%</strong>')}
-      ${row('Status',parseFloat(fNSavg)>=85?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${nsGap}% gap</span>`)}
+      ${row('Fleet North Star',`<strong style="font-size:20px;color:${fNSavg>=95?'var(--green)':fNSavg>=80?'var(--yellow)':'var(--red)'}">${fNSavg}%</strong>`)}
+      ${row('Target','<strong style="color:var(--green)">≥ 95%</strong>')}
+      ${row('Status',parseFloat(fNSavg)>=95?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${nsGap}% gap</span>`)}
       ${row('Period',`<span style="font-size:11px">${activePeriodLabel()}</span>`)}
     </table>
     <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub North Star</span></div>
     <table style="font-size:11px"><thead><tr><th>Hub</th><th>NS Avg</th><th>Status</th><th>Action</th></tr></thead><tbody>
-    ${hubs.map(h=>{const d=D[h];const nsA=d.daily?((d.daily.reduce((s,dy)=>s+(dy.ns||0),0))/d.daily.length).toFixed(1):'—';const isBad=parseFloat(nsA)<85;
+    ${hubs.map(h=>{const d=D[h];const nsA=d.daily?((d.daily.reduce((s,dy)=>s+(dy.ns||0),0))/d.daily.length).toFixed(1):'—';const isBad=parseFloat(nsA)<95;
       return`<tr><td><strong>${h.toUpperCase()}</strong></td>
         <td style="font-weight:600;color:${isBad?'var(--red)':'var(--green)'}">${nsA}%</td>
         <td><span class="tag ${isBad?'tag-red':'tag-green'}">${isBad?'Below Target':'On Target'}</span></td>
@@ -1534,17 +1601,17 @@ function showFleetModal(type){
 window.showHubNSModal=function(hub){
   const d=D[hub];if(!d)return;
   const nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
-  const nsC=parseFloat(nsAvg)>=85?'var(--green)':parseFloat(nsAvg)>=70?'var(--yellow)':'var(--red)';
+  const nsC=parseFloat(nsAvg)>=95?'var(--green)':parseFloat(nsAvg)>=80?'var(--yellow)':'var(--red)';
   const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
   const recentDays=[...(d.daily||[])].reverse().slice(0,14);
   const dayRows=recentDays.map(dy=>{
-    const c=(dy.ns||0)>=85?'var(--green)':(dy.ns||0)>=70?'var(--yellow)':'var(--red)';
-    const isBad=(dy.ns||0)<85;
+    const c=(dy.ns||0)>=95?'var(--green)':(dy.ns||0)>=80?'var(--yellow)':'var(--red)';
+    const isBad=(dy.ns||0)<95;
     return`<tr><td style="font-family:monospace;font-size:10px;color:var(--muted)">${dy.date}</td><td style="font-weight:600;color:${c}">${(dy.ns||0).toFixed(1)}%</td><td style="color:var(--muted)">${dy.total}</td><td>${isBad?`<button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'slow',filters:{search:'${dy.date}'},context:{label:'Slow Events ${dy.date}',desc:'NS was ${(dy.ns||0).toFixed(1)}%'}})">Inspect &rarr;</button>`:'—'}</td></tr>`;
   }).join('');
-  const lcSlow={hub,tab:'slow',context:{label:`${hub.toUpperCase()} — Slow Events`,desc:`North Star at ${nsAvg}% · target ≥85%`}};
+  const lcSlow={hub,tab:'slow',context:{label:`${hub.toUpperCase()} — Slow Events`,desc:`North Star at ${nsAvg}% · target ≥95%`}};
   const body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px"><div style="font-size:11px;color:var(--muted);line-height:1.7"><strong style="color:#e8edf5">What is North Star?</strong><br>The percentage of all device control events completed end-to-end in under 1 second. This is the single most user-facing quality metric — anything over 1s feels like lag to the user.</div><div style="font-size:10px;font-family:monospace;background:var(--surface2);border:1px solid var(--border2);padding:8px 12px;border-radius:4px;color:var(--blue);margin-top:10px">NS = ROUND(100 &times; COUNT(latency_ms &lt; 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div></div>
-  <table style="font-size:12px;margin-bottom:14px">${row('Hub',`<strong>${hub.toUpperCase()}</strong>`)}${row('Period Average',`<strong style="font-size:20px;color:${nsC}">${nsAvg}%</strong>`)}${row('Target','<strong style="color:var(--green)">≥85%</strong>')}${row('Status',parseFloat(nsAvg)>=85?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${(85-parseFloat(nsAvg)).toFixed(1)}% gap</span>`)}${row('Period',activePeriodLabel())}</table>
+  <table style="font-size:12px;margin-bottom:14px">${row('Hub',`<strong>${hub.toUpperCase()}</strong>`)}${row('Period Average',`<strong style="font-size:20px;color:${nsC}">${nsAvg}%</strong>`)}${row('Target','<strong style="color:var(--green)">≥95%</strong>')}${row('Status',parseFloat(nsAvg)>=95?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${(95-parseFloat(nsAvg)).toFixed(1)}% gap</span>`)}${row('Period',activePeriodLabel())}</table>
   <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Daily Trend — last ${recentDays.length} days (most recent first)</span></div>
   <table style="font-size:11px"><thead><tr><th>Date</th><th>NS %</th><th>Total Events</th><th>Action</th></tr></thead><tbody>${dayRows}</tbody></table></div>
   ${lcBtn(lcSlow,'View All Slow Events in Log Center →')}`;
@@ -1556,29 +1623,32 @@ window.showInfo=function(key){
     fleet_total:{title:'Total Fleet Events',body:'The total number of device control commands sent across all your hubs in the last 30 days. Every time someone taps to turn a light on or off — or a dock button is pressed — that counts as one event.'},
     fleet_reliability:{title:'Fleet Reliability',body:'Out of all commands sent across every hub, what percentage actually worked? 100% = every command succeeded. Anything below 97% means some lights aren\'t responding as expected. Click the card to see which specific hubs are pulling this number down.'},
     fleet_latency:{title:'Average P50 Latency',body:'"P50" means the median — half of all commands finished faster than this number, half were slower. Under 500ms feels near-instant to the user. Over 800ms starts to feel noticeably sluggish. This is the average P50 across all your hubs.'},
-    fleet_northstar:{title:'North Star — Sub-1s Rate',body:'What percentage of all commands completed in under 1 second? This is the single most user-facing quality metric — anything over 1s is perceptible lag. A healthy system should stay at 85% or above.'},
+    fleet_northstar:{title:'North Star — Sub-1s Rate',body:'What percentage of all commands completed in under 1 second? This is the single most user-facing quality metric — anything over 1s is perceptible lag. A healthy system should stay at 95% or above.'},
     hub_total:{title:'Total Events',body:'All device commands sent through this specific hub in the last 30 days — from the app, dock buttons, remote access, and automations combined.'},
     hub_reliability:{title:'Reliability',body:'The percentage of commands on this hub that completed successfully. Click to jump to the Reliability tab for a full breakdown by control source, failure reason, and per-device failure count.'},
     hub_latency:{title:'P50 Latency',body:'The median response time for commands through this hub. Half of all commands were faster than this number. Click to jump to the Speed tab, which breaks down latency by each stage of the request pipeline.'},
     hub_failures:{title:'Failures',body:'The number of commands that failed to complete on this hub in the last 30 days. Click to open the Log Center pre-filtered to this hub\'s failures for event-level investigation.'},
     daily_chart:{title:'Daily Events & Reliability',body:'A day-by-day view of two things at once:\n\n• Blue bars = how many commands were sent that day (activity volume)\n• Green line = what percentage succeeded (reliability)\n\nA dip in the green line on a specific day means more commands were failing. Click any bar to investigate what happened on that day.'},
-    ns_chart:{title:'North Star — Sub-1s Rate',body:'Each point shows what percentage of commands on that day finished in under 1 second. A healthy system stays above 85% consistently. Drops usually indicate network congestion, a device issue, or Thread mesh instability. Click any point to see the slow events from that day.'},
-    heatmap:{title:'Activity Heatmap',body:'Shows when devices are controlled most — rows are days of the week, columns are hours of the day (0–23). Darker blue means more activity in that slot.\n\nUseful for spotting patterns like "most control happens on weekday evenings at 7–9pm." Hover any cell for a source breakdown (app vs dock vs remote vs auto). Click any cell to inspect those specific events in the Log Center.'},
-    speed_segments:{title:'Speed Segments',body:'Breaks down where time is actually spent when a command is sent. There are 4 stages:\n\n• Hub→SNAP→Hub: How long for the hub to command the physical device and get state confirmed back\n• Hub→App: How long for the hub to push the new state to the phone via WebSocket\n• Local E2E: Full round trip when the user is on the same Wi-Fi as the hub\n• Remote E2E: Full round trip when controlling from outside the home\n\nClick any row for event-level detail.'},
-    lat_dist:{title:'Latency Distribution',body:'How many commands fell into each speed bucket:\n\n• Green (under 500ms): Fast — feels instant\n• Green (500–800ms): Acceptable\n• Yellow (800ms–1s): Getting slow\n• Red (over 1s): Noticeably sluggish\n\nA healthy system has the vast majority of events in the fast buckets. Click any bar to see the actual events in that range.'},
-    uc_lat:{title:'Latency by Use Case',body:'Compares speed across the different ways devices can be controlled:\n\n• App Control: User tapped the phone app on local Wi-Fi\n• Dock Control: Physical dock button was pressed\n• Remote App: User controlled from outside the home\n• Automation: Triggered automatically by a schedule or rule\n\nShows Avg, P50 (typical), and P95 (worst-case). Useful for spotting if one control method is consistently slower.'},
+    ns_chart:{title:'North Star — Sub-1s Rate',body:'Each point shows what percentage of commands on that day finished in under 1 second. A healthy system stays above 95% consistently. Drops usually indicate network congestion, a device issue, or Thread mesh instability. Click any point to see the slow events from that day.'},
+    heatmap:{title:'Activity Heatmap',body:'Shows when devices are controlled most — rows are days of the week, columns are hours of the day (0–23). Darker blue means more activity in that slot.\n\nUseful for spotting patterns like "most control happens on weekday evenings at 7–9pm." Hover any cell for a source breakdown (app vs dock vs remote vs observed). Click any cell to inspect those specific events in the Log Center.'},
+    heatmap_fail:{title:'Failures Heatmap',body:'Shows when failures happen most — same grid as the Activity Heatmap but the intensity represents failure count, not total events.\n\nDarker red = more failures in that time slot. A cell glowing red at a specific hour means commands sent then are failing more often — could point to device unavailability, Thread mesh instability, or power cycling at a regular time.\n\nClick any cell to jump to the Log Center filtered to failures in that time slot.'},
+    speed_segments:{title:'Speed Segments',body:'Breaks down where time is actually spent when a command is sent. There are 4 stages:\n\n• Hub→SNAP→Hub: How long for the hub to command the physical device and get state confirmed back\n• Hub→App: How long for the hub to push the new state to the phone via WebSocket\n• App Control (Local): Full round trip when the user is on the same Wi-Fi as the hub\n• App Control (Remote): Full round trip when controlling from outside the home\n\nClick any row for event-level detail.'},
+    lat_dist:{title:'Latency Distribution',body:'How many commands fell into each speed bucket:\n\n• Green (<500ms): Fast — feels instant\n• Yellow (500ms–1s): Acceptable\n• Orange (1–2s): Getting slow\n• Red (2–5s): Noticeably sluggish\n• Deep Red (>5s): Very slow — investigate\n\nA healthy system has the vast majority of events in the green bucket. Click any bar to see the actual events in that range.'},
+    uc_lat:{title:'Latency by Use Case',body:'Compares speed across the different ways devices can be controlled:\n\n• App Control: User tapped the phone app on local Wi-Fi\n• Dock Control: Physical dock button was pressed\n• Remote App: User controlled from outside the home\n• Observed Change: State change detected by the hub (e.g. manual switch)\n\nShows Avg, P50 (typical), and P95 (worst-case). Useful for spotting if one control method is consistently slower.'},
     uc_table:{title:'Per Use Case Speed',body:'Detailed latency numbers for each control method. The most important column is P95 — it represents the slowest 5% of commands, your worst-case user experience. P95 above 1 second is flagged as Critical and should be investigated. Click any row for event-level detail.'},
     uc_speed_metrics:{title:'Speed Metrics Explained',body:'Every use-case card shows four numbers:\n\n• Avg — The simple average of all command times. Easy to read but one very slow event can pull it up and make things look worse than they are.\n\n• P50 (Median) — Sort all command times; P50 is the middle value. Half finished faster, half slower. This is what a typical user actually experiences day-to-day.\n\n• P95 — 95% of commands finished faster than this number. Only the slowest 5% were slower. This is your worst-case experience — if P95 is under 1000ms, even your slowest users are getting a decent experience.\n\n• Std Dev (Standard Deviation) — Measures how consistent the times are. A low number means most commands take a similar amount of time (predictable). A high number means some are fast and some are very slow (erratic). Green under 200ms · Yellow 200–500ms · Red above 500ms.'},
     rel_kpis:{title:'Reliability KPIs',body:'Two ways of measuring how reliably commands are confirmed:\n\n• App Trigger Feedback: When a user taps in the app, does the app receive confirmation that the command worked? This is the most direct measure of app-facing reliability.\n• Dock Trigger Reliability: When a physical dock button is pressed, does the command succeed? This comes from the physical dock hardware logs.\n\nClick either card to debug failures for that source.'},
-    src_rel:{title:'Per-Source Reliability',body:'Reliability broken down by how the device was controlled — App, Remote App, Dock Control, or Automation. Lets you pinpoint whether one control method is failing more than others.\n\nIf App Control is 99% but Dock Control is 85%, the issue is specific to dock hardware or Thread mesh coverage near those docks. Click any row to see its failure events.'},
+    src_rel:{title:'Per-Source Reliability',body:'Reliability broken down by how the device was controlled — App, Remote App, Dock Control, or Observed Change. Lets you pinpoint whether one control method is failing more than others.\n\nIf App Control is 99% but Dock Control is 85%, the issue is specific to dock hardware or Thread mesh coverage near those docks. Click any row to see its failure events.'},
     rel_trend:{title:'Reliability Trend',body:'How reliability changed over the past 30 days. A sustained drop indicates a persistent problem. A one-day spike usually points to a temporary event like a power outage or network hiccup.\n\nClick any point to jump directly to the Log Center filtered to that day\'s failures.'},
     dock_rel:{title:'Dock Reliability',body:'Reliability per physical dock device. Each row shows one dock — how many button presses succeeded versus failed. If a specific dock has low reliability, it may have a Thread mesh coverage issue or a hardware fault.\n\nClick any row to see a per-action breakdown (which specific button assignments are failing).'},
     fail_reason:{title:'Failures by Reason',body:'Groups all failures by what went wrong:\n\n• TIMEOUT: Command reached the hub but the device didn\'t respond in time\n• DEVICE_OFFLINE: Device wasn\'t reachable when the command was sent\n• NO_RESPONSE: Hub got no acknowledgement from the device\n• THREAD_MESH_FAIL: The wireless mesh dropped the packet before reaching the device\n\nClick any reason to see which devices and rooms are affected.'},
     fail_device:{title:'Failures by Device',body:'Which individual lights or switches are failing the most. If one device appears here consistently, it likely needs attention — check Thread mesh coverage near it, verify the device is powered, or check if a firmware update is available.\n\nClick any row to inspect the failure events for that specific device.'},
-    usage_auto:{title:'Automation / Day',body:'How many automated or scheduled events happen per day on average. These are commands triggered without any user tapping — schedules, scenes, or rules set up in Home Assistant.\n\nA rising number here means the system is doing more work automatically, which is generally good.'},
+    usage_auto:{title:'Automation / Day',body:'How many automation runs happened per day on average, counted from the hub\'s own logs (ha_logs automation_triggered events).\n\nThe hub records every automation run — even when the app is closed — so this is the reliable source. The app\'s own observed counts are not used for this tile because the app only records while it is open, which makes them inconsistent.\n\nClick the tile to see the hub-recorded runs in the Log Center (shown as "Automation Run (Hub)").'},
+    usage_scene:{title:'Scene / Day',body:'How many scene activations happened per day on average, counted from the hub\'s own logs (ha_logs scene call_service events). A scene is a preset group of device states — for example, "Meeting Mode" sets multiple lights to a specific configuration in one tap.\n\nThe hub records every activation — even when the app is closed — so this is the reliable source. The app\'s own observed counts are not used for this tile: the app only records while it is open and can log state-refresh bursts as false activations.\n\nClick the tile to see the hub-recorded activations in the Log Center (shown as "Scene Activated (Hub)").'},
+    usage_snap_devices:{title:'Active SNAP Devices',body:'The count of distinct physical SNAP-connected devices that had at least one command in this period.\n\nOnly counts real physical hardware:\n• light.* — SNAP-connected lights\n• switch.* — SNAP-connected switches\n• fan.* — SNAP-connected fans\n\nExcludes virtual entities like scene.*, automation.*, script.*, and group.* which are logical constructs, not physical devices.'},
     usage_app:{title:'App Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from someone tapping the phone app? A high app ratio means users prefer the app over physical dock buttons.\n\nUseful for understanding how the system is actually being used day-to-day and whether dock hardware is being adopted.'},
     usage_dock:{title:'Dock Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from pressing a physical dock button? A high dock ratio means users find the physical interface more natural or convenient than the app.'},
-    src_chart:{title:'Source Breakdown',body:'A visual split of all events by how they were triggered:\n\n• App (Local): User tapped the phone app on the same Wi-Fi\n• Remote App: User tapped the app from outside the home\n• Dock Control: Physical dock button was pressed\n• Automation: Triggered automatically by a schedule or rule\n\nClick any segment to see those specific events in the Log Center.'},
+    src_chart:{title:'Source Breakdown',body:'A visual split of all events by how they were triggered:\n\n• App (Local): User tapped the phone app on the same Wi-Fi\n• Remote App: User tapped the app from outside the home\n• Dock Control: Physical dock button was pressed\n• Observed Change: State change detected automatically (e.g. manual switch, scene activation)\n\nClick any segment to see those specific events in the Log Center.'},
     dock_usage:{title:'Dock Usage',body:'A summary of physical dock button activity:\n\n• Total Actions: All button presses across all docks in this period\n• Active Docks: How many unique dock devices have been used\n• Active Docklets: How many individual button assignments have been pressed\n\nThe table below shows per-docklet success and failure counts — useful for spotting a specific button that isn\'t working reliably. Click any row for a full action breakdown.'},
     dev_activity:{title:'Device Activity',body:'A ranked list of every device (light or switch) controlled through this hub, sorted by most-used first. Shows:\n\n• Device: The entity ID (short name) of the device\n• Room: Which room it\'s in\n• Events: Total commands sent to this device in the 30-day window\n• Reliability: What percentage of commands on this device succeeded\n• P50: The median response time for this specific device\n\nClick any row to see the full stats for that device including its failure events.'},
     log_center:{title:'Log Center',body:'A detailed event-level workspace for debugging. Every command event appears here with its timestamp, device, room, control method, latency, and failure reason.\n\nHow to use it:\n• Failures tab: Shows only failed commands — start here when investigating an issue\n• Slow Events tab: Shows commands that took over 800ms\n• All Events tab: Every event in the 30-day window\n• Source / Reason filters: Narrow down to a specific control method or failure type\n• Search box: Filter by device name, room, or date\n• Click any row: Expands a visual timing pipeline showing exactly where time was spent in that specific command'}
