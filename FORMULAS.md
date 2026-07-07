@@ -8,19 +8,27 @@ All formulas only count events inside the **selected date range** (default: last
 
 ---
 
+> **Scope:** counts and reliability are **all-source** (app + dock + SNAP + scene +
+> automation). Latency/speed is **app-command only** (only app events carry timestamps).
+> App-*observed* changes are never shown (unreliable). Direct HA-screen control isn't
+> counted yet (can't be separated from app commands — pending a hub-side fix).
+
 ## 1. Top KPIs (Overview)
 
-### Total Events
+### Total Events  (all sources)
 ```
-Total Events = count of all rows in app_logs for this hub
+Total Events = app commands + dock presses + scene activations + automation runs
 ```
-Every command or observed change the app logged — app taps, dock presses, remote controls, observed changes.
+Every reliable event, whoever triggered it. The tile's sub-line shows the App / Dock / Hub split.
+App commands come from **app_logs**; dock, SNAP, scene and automation come from **ha_logs**.
 
-### Reliability
+### Reliability  (all sources)
 ```
-Reliability % = (successful events ÷ total events) × 100
+Reliability % = (all successful events ÷ Total Events) × 100
 ```
-**Example:** 1,829 succeeded out of 1,838 total → 1829 ÷ 1838 × 100 = **99.51%**
+Success spans app + dock + SNAP (each has a real pass/fail); scene and automation
+runs count as successful activity. **Example:** 1,934 of 2,120 → **91.2%**.
+When there are no app commands in range, the tile shows **"—"** (app-command detail undefined).
 
 | Colour | Range |
 |---|---|
@@ -30,8 +38,9 @@ Reliability % = (successful events ÷ total events) × 100
 
 ### Failures
 ```
-Failures = total events − successful events
+Failures = Total Events − successful events   (app + dock + SNAP failures)
 ```
+Always reconciles: Total = Success + Failures, and equals the Failures-by-Reason sum.
 
 ### P50 Latency (median)
 ```
@@ -90,11 +99,12 @@ Events with backwards timestamps (clock skew) are skipped. Target: **< 200ms**.
 
 ### Hub → SNAP → Hub
 ```
-= ha_processing_latency_ms from ha_logs
+= snap_state_change_ts − matter_command_ts   (per event, from ha_logs; gap > 0)
+Avg / P50 / P95 over those gaps
 ```
-How long the hub takes to command the device and get the state back.
-Currently shows **"No data"** because the hub reports 0ms for every event
-(hub-side recording gap — will fill in automatically once fixed in firmware).
+The real device round-trip: hub sends the Matter command → device confirms its new state.
+Now **live** (early data ≈ 325ms p50). Uses the timestamp gap, **not**
+`ha_processing_latency_ms` (that field is ~0–6ms, just HA's internal handling). Target: **< 300ms**.
 
 ### Std Dev (Standard Deviation) — on Speed by Use Case cards
 ```
@@ -132,17 +142,19 @@ Only counts "App Control" use cases. Target: **≥ 97%**.
 
 ### Dock Trigger Reliability
 ```
-= (sum of success_count ÷ sum of total_action_count) × 100    [from dock_logs]
+= (dock presses that activated the device ÷ all dock presses) × 100    [from ha_logs]
 ```
-Comes from the dock hardware's own press counters, not from the app.
-**Example:** 132 successful presses of 134 total → **98.51%**
+A dock press = a `call_service` tagged with `dock_id`; it **succeeds** if its `context_id`
+produced a device state change to `on`/`off`, else it failed. Computed from **ha_logs**
+(reliable, always-on), *not* from dock_logs. dock_logs is used only for the usage breakdown.
 
 ### Per-Source Reliability (table)
 ```
 per source: reliability % = (success ÷ total) × 100
 ```
-Same formula, grouped by how the command was triggered:
-App Control (Local), App Control (Remote), Docklet Press (Observed from App), Observed Change.
+Grouped by how the command was triggered — the sources that have a real pass/fail:
+**App Control (Local)**, **App Control (Remote)**, **Dock Control**.
+(Observed Change is not shown; scene/automation are activations without a pass/fail.)
 
 ### Per-Device Reliability (Device Activity table)
 ```
@@ -156,7 +168,8 @@ virtual entities (scene.*, automation.*, script.*, group.*) are excluded.
 ```
 count of failed events grouped by failure_reason
 ```
-Reasons: `TIMEOUT`, `NO_RESPONSE`, `DEVICE_OFFLINE`, `THREAD_MESH_FAIL`.
+Reasons: `TIMEOUT`, `NO_RESPONSE`, `DEVICE_OFFLINE`, `THREAD_MESH_FAIL` (app), and
+`DEVICE_UNAVAILABLE` (dock / SNAP presses whose device didn't reach on/off).
 
 ### Failures by Device
 ```
@@ -197,8 +210,8 @@ Only light.*, switch.*, fan.* — scenes/automations/scripts/groups excluded.
 ```
 = app events ÷ (app events + dock events) × 100
 ```
-Of all *manual* controls, what share came from the phone app?
-**Example:** 1717 ÷ (1717 + 30) = **98.28%**
+Of all *manual* controls, what share came from the phone app? Dock events here are the
+real dock presses from **ha_logs**. **Example:** 1717 ÷ (1717 + 384) = **81.7%**
 
 ### Dock Usage Ratio
 ```
@@ -208,38 +221,41 @@ The other half of the same split. App Ratio + Dock Ratio = 100%.
 
 ### Source Breakdown (doughnut)
 ```
-counts of: App (Local) · Remote App · Dock Control · Observed Change
+counts of: App (Local) · Remote App · Dock Control · Hub (Scene/Auto)
 ```
-These four counts always add up exactly to Total Events.
+These slices always add up exactly to Total Events. (Observed Change is excluded.)
 
-### Dock Usage (panel)
+### Dock Usage (panel)  — usage breakdown only, from dock_logs
 ```
 Total Actions   = sum of total_action_count           [dock_logs]
 per action      = sum grouped by action (toggle / increment / decrement)
-per docklet     = sum grouped by docklet_id
-daily reliability = success ÷ total per date
 ```
+This panel is **usage only**. Dock *reliability* is on the Reliability tab (from ha_logs).
+*dock_logs is currently mock; ha_logs is real.*
 
 ---
 
 ## 5. Charts
 
-### Daily Events & Reliability
+### Daily Events & Reliability  (all sources)
 ```
-per day: total = event count · reliability % = success ÷ total × 100
+per day: total = all-source event count · reliability % = success ÷ total × 100
 ```
+Built from the complete event pool, so the bars sum to Total Events.
 
-### North Star trend
+### North Star trend  (app commands)
 ```
-per day: NS % = events < 1000ms ÷ events with latency × 100
+per day: NS % = app events < 1000ms ÷ app events with latency × 100
 ```
-Target line drawn at **95%**.
+App-only (latency exists only for app commands). Target line at **95%**.
 
-### Activity Heatmap
+### Activity Heatmap  (all sources)
 ```
-cell value = event count for that (day of week, hour)
+cell value = event count for that (day of week, hour), across all sources
 ```
-Darker blue = more activity. Hover shows the App/Dock/Remote/Observed split.
+Darker blue = more activity. Hover shows the App / Remote / Dock / Hub split.
+Built from the same event pool as the Log Center, so **clicking a cell filters the
+Log Center to that exact day + hour and the counts match**.
 
 ### Failures Heatmap
 ```

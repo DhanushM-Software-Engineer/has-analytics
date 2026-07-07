@@ -223,6 +223,7 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <button class="btn" onclick="showLanding()">← Back to Fleet</button>
 </div>
 <div class="kpi-row" id="topKPIs"></div>
+<div id="emptyPeriodBanner" style="display:none;background:rgba(212,150,31,.08);border:1px solid rgba(212,150,31,.35);border-radius:8px;padding:14px 18px;margin-bottom:16px"></div>
 <div class="tabs">
 <div class="tab active" onclick="switchTab(this,'overall')">Overall</div>
 <div class="tab" onclick="switchTab(this,'speed')">Speed</div>
@@ -253,10 +254,10 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div class="panel"><h3>Per-Source Reliability — Click row to debug failures<button class="info-btn" onclick="event.stopPropagation();showInfo('src_rel')">ⓘ</button></h3><table><thead><tr><th>Source</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Action</th></tr></thead><tbody id="srcRelTable"></tbody></table></div>
 <div class="grid-2">
 <div class="panel"><h3>Reliability Trend — Click any point to inspect failures on that day<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_trend')">ⓘ</button></h3><div class="chart-box"><canvas id="relTrendChart"></canvas></div></div>
-<div class="panel"><h3>Dock Reliability — Click row for action breakdown<button class="info-btn" onclick="event.stopPropagation();showInfo('dock_rel')">ⓘ</button></h3><div id="dockSortBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:var(--muted)">Sort by failures: <button id="dockSortBtn" onclick="toggleDockSort()" style="background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:10px;padding:2px 8px;cursor:pointer">Most ▼</button></div><div class="scroll-table"><table><thead><tr><th>Dock ID</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Docklets</th></tr></thead><tbody id="dockDetailTable"></tbody></table></div></div>
+<div class="panel"><h3>Dock Reliability — Click row for action breakdown<button class="info-btn" onclick="event.stopPropagation();showInfo('dock_rel')">ⓘ</button></h3><div id="dockSortBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:var(--muted)">Sort by failures: <button id="dockSortBtn" onclick="toggleDockSort()" style="background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:10px;padding:2px 8px;cursor:pointer">Most ▼</button></div><div class="scroll-table"><table><thead><tr><th>Dock ID</th><th>Presses</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Docklets</th></tr></thead><tbody id="dockDetailTable"></tbody></table></div></div>
 </div>
 <div class="panel"><h3>Failures by Reason — Click to diagnose<button class="info-btn" onclick="event.stopPropagation();showInfo('fail_reason')">ⓘ</button></h3><table><thead><tr><th>Reason</th><th>Count</th><th>Action</th></tr></thead><tbody id="failReasonTable"></tbody></table></div>
-<div class="panel"><h3>Failures by Device<button class="info-btn" onclick="event.stopPropagation();showInfo('fail_device')">ⓘ</button></h3><div style="overflow-x:auto"><table><thead><tr><th>Device</th><th style="text-align:center">Total</th><th style="text-align:center">NO_RESPONSE</th><th style="text-align:center">TIMEOUT</th><th style="text-align:center">DEVICE_OFFLINE</th><th style="text-align:center">THREAD_MESH_FAIL</th><th>Action</th></tr></thead><tbody id="failDevTable"></tbody></table></div></div>
+<div class="panel"><h3>Failures by Device<button class="info-btn" onclick="event.stopPropagation();showInfo('fail_device')">ⓘ</button></h3><div style="overflow-x:auto"><table><thead><tr><th>Device</th><th style="text-align:center">Total</th><th style="text-align:center">NO_RESPONSE</th><th style="text-align:center">TIMEOUT</th><th style="text-align:center">DEVICE_OFFLINE</th><th style="text-align:center">THREAD_MESH_FAIL</th><th style="text-align:center">DEVICE_UNAVAILABLE</th><th>Action</th></tr></thead><tbody id="failDevTable"></tbody></table></div></div>
 <div class="panel"><h3>Device Activity — Click row for device details<button class="info-btn" onclick="event.stopPropagation();showInfo('dev_activity')">ⓘ</button></h3><div class="scroll-table"><table><thead><tr><th>Device</th><th>Room</th><th>Events</th><th>Reliability</th><th>P50</th></tr></thead><tbody id="devActivityTable"></tbody></table></div></div>
 </div>
 <div id="tab-usage" class="tab-pane" style="display:none">
@@ -271,7 +272,7 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
 <div style="display:flex;align-items:flex-start;gap:14px">
 <div id="lcBackBtn" style="display:none;padding-top:2px"></div>
-<div><div class="lc-title" style="display:flex;align-items:center;gap:8px">Log Center<button class="info-btn" onclick="event.stopPropagation();showInfo('log_center')">ⓘ</button></div><div class="lc-subtitle">Event-level debugging workspace · Click any row to expand timing pipeline · 30-day window</div></div>
+<div><div class="lc-title" style="display:flex;align-items:center;gap:8px">Log Center<button class="info-btn" onclick="event.stopPropagation();showInfo('log_center')">ⓘ</button></div><div class="lc-subtitle" id="lcSubtitle">Event-level debugging workspace · Click any row to expand timing pipeline</div></div>
 </div>
 <div id="lcHubPills" class="lc-hub-pills"></div>
 </div>
@@ -282,7 +283,7 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <button class="lc-tab tab-all" data-tab="all" onclick="lcSetTab('all')">All Events</button>
 </div>
 <div class="lc-filters">
-<select id="lcFilterSrc" class="lc-filter-select" onchange="renderLogCenter()"><option value="">All Sources</option><option value="app">App Control (Local)</option><option value="remote">Remote App</option><option value="docklet">Dock Control</option><option value="direct">Automation</option></select>
+<select id="lcFilterSrc" class="lc-filter-select" onchange="renderLogCenter()"><option value="">All Sources</option><option value="app">App Control (Local)</option><option value="remote">Remote App</option><option value="docklet">Dock Control</option><option value="direct">Scene / Automation (Hub)</option></select>
 <select id="lcFilterReason" class="lc-filter-select" onchange="renderLogCenter()"><option value="">All Reasons</option><option value="TIMEOUT">TIMEOUT</option><option value="NO_RESPONSE">NO_RESPONSE</option><option value="DEVICE_OFFLINE">DEVICE_OFFLINE</option><option value="THREAD_MESH_FAIL">THREAD_MESH_FAIL</option></select>
 <input id="lcFilterSearch" class="lc-filter-input" placeholder="Device, room, use case…" oninput="renderLogCenter()">
 <button class="lc-filter-clear" onclick="lcClearFilters()">Clear</button>
@@ -309,6 +310,6 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
 <div class="modal"><h2 id="modalTitle"><span></span><span class="close" onclick="closeModal()">✕</span></h2><div id="modalBody"></div></div>
 </div>
-<script src="dashboard_app.js?v=8"></script>
+<script src="dashboard_app.js"></script>
 </body>
 </html>

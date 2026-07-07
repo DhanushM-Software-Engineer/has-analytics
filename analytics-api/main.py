@@ -19,86 +19,96 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 PROJECT = "schnell-home-automation"
 client  = bigquery.Client(project=PROJECT)
 
-# ── Dock data — read live from BigQuery (schnell_analytics.dock_logs) ─────────
-# dock_logs mirrors the dock Google Sheet: an Apps Script inside the Sheet
-# re-loads the table on every edit (see Analytics/dock_sheet_apps_script.gs).
+# ── Data-sourcing model ───────────────────────────────────────────────────────
+# app_logs  → GENUINE APP-TRIGGERED actions only (reliable). Headline Total Events,
+#             Reliability, Speed, latency, heatmap, per-device and failures all use
+#             this scope. "Observed Change (App)" is passive app observation — the
+#             app only sees it while open, so it is UNRELIABLE and is NOT shown as a
+#             user-facing category; it is kept internally for reference only.
+# ha_logs   → the hub records everything reliably even when the app is closed. Source
+#             of truth for scene activations, automation runs, and dock device-side
+#             activations.
+# dock_logs → the dock hardware's own press-level success/failure (the button press
+#             itself, independent of the device it activates). Synced with ha_logs
+#             (device-side activation) by dock_id + docklet_id.
+APP_UC = "use_case IN ('Local App Control','Device Bind (App)','Remote App Control')"
 
-def _build_dock_stats(rows):
-    """Aggregate dock_logs rows into per-dock stats with docklets[] sub-array."""
+
+def _build_dock_stats(dock_ev, dock_action_rows):
+    """Dock RELIABILITY grouped from the SAME dock press-event list the Log Center
+    uses (so the dock count can never diverge from the reliability total), merged
+    with the dock_logs action-type usage breakdown.
+
+    dock_ev          : ha_logs dock press events, each with dock_id, docklet_id and a
+                       `success` flag (did the bound device reach on/off?).
+    dock_action_rows : dock_logs rows — only for the per-docklet action-type usage
+                       breakdown (increment / decrement / toggle).
+    """
     from collections import defaultdict
-    by_dock = defaultdict(lambda: {"total": 0, "success": 0, "failure": 0, "docklets": {}})
-    for r in rows:
-        dock_id    = r["dock_id"]
-        docklet_id = r["docklet_id"]
-        by_dock[dock_id]["total"]   += r["total_action_count"]
-        by_dock[dock_id]["success"] += r["success_count"]
-        by_dock[dock_id]["failure"] += r["failure_count"]
-        if docklet_id not in by_dock[dock_id]["docklets"]:
-            by_dock[dock_id]["docklets"][docklet_id] = {
-                "total": 0, "success": 0, "failure": 0,
-                "actions": defaultdict(lambda: {"total": 0, "success": 0, "failure": 0})
-            }
-        dk = by_dock[dock_id]["docklets"][docklet_id]
-        dk["total"]   += r["total_action_count"]
-        dk["success"] += r["success_count"]
-        dk["failure"] += r["failure_count"]
-        a = dk["actions"][r["action"]]
+    actions_by_dk = defaultdict(lambda: defaultdict(lambda: {"total": 0, "success": 0, "failure": 0}))
+    for r in dock_action_rows:
+        a = actions_by_dk[(r["dock_id"], r["docklet_id"])][r["action"]]
         a["total"]   += r["total_action_count"]
         a["success"] += r["success_count"]
         a["failure"] += r["failure_count"]
+
+    by_dock = defaultdict(lambda: {"total": 0, "success": 0, "failure": 0, "docklets": {}})
+    for e in dock_ev:
+        dock_id = e.get("dock_id"); docklet_id = e.get("docklet_id"); ok = bool(e.get("success"))
+        dd = by_dock[dock_id]
+        dd["total"] += 1; dd["success"] += 1 if ok else 0; dd["failure"] += 0 if ok else 1
+        dk = dd["docklets"].setdefault(docklet_id, {"total": 0, "success": 0, "failure": 0})
+        dk["total"] += 1; dk["success"] += 1 if ok else 0; dk["failure"] += 0 if ok else 1
+
     stats = []
-    for dock_id, d in by_dock.items():
-        rel = round(100 * d["success"] / d["total"], 2) if d["total"] else 0
+    for dock_id, dd in by_dock.items():
         docklets = []
-        for docklet_id, dk in d["docklets"].items():
-            dk_rel = round(100 * dk["success"] / dk["total"], 2) if dk["total"] else 0
+        for docklet_id, dk in dd["docklets"].items():
             actions = [
                 {"action": act, **v,
                  "rel": round(100 * v["success"] / v["total"], 2) if v["total"] else 0}
-                for act, v in dk["actions"].items()
+                for act, v in actions_by_dk.get((dock_id, docklet_id), {}).items()
             ]
             docklets.append({
                 "docklet_id": docklet_id,
-                "total":      dk["total"],
-                "success":    dk["success"],
-                "failure":    dk["failure"],
-                "rel":        dk_rel,
-                "actions":    actions,
+                "total": dk["total"], "success": dk["success"], "failure": dk["failure"],
+                "rel": round(100 * dk["success"] / dk["total"], 2) if dk["total"] else 0,
+                "actions": actions,
             })
         stats.append({
-            "dock_id":  dock_id,
-            "total":    d["total"],
-            "success":  d["success"],
-            "failure":  d["failure"],
-            "rel":      rel,
+            "dock_id": dock_id, "total": dd["total"], "success": dd["success"],
+            "failure": dd["failure"],
+            "rel": round(100 * dd["success"] / dd["total"], 2) if dd["total"] else 0,
             "docklets": docklets,
         })
     return stats
 
-def _build_dock_usage(rows):
-    """Aggregate dock_logs rows into dock_usage summary."""
+
+def _build_dock_usage(dock_rows):
+    """Dock USAGE breakdown — sourced from dock_logs only (action-type counts:
+    increment / decrement / toggle). Reliability is NOT taken from here."""
     from collections import defaultdict
     by_action  = defaultdict(int)
     by_docklet = defaultdict(int)
     by_date    = defaultdict(lambda: {"total": 0, "success": 0, "failure": 0})
-    for r in rows:
-        by_action[r["action"]]    += r["total_action_count"]
+    for r in dock_rows:
+        by_action[r["action"]]      += r["total_action_count"]
         by_docklet[r["docklet_id"]] += r["total_action_count"]
         by_date[r["date"]]["total"]   += r["total_action_count"]
         by_date[r["date"]]["success"] += r["success_count"]
         by_date[r["date"]]["failure"] += r["failure_count"]
-    total = sum(by_action.values())
     daily = [
-        {"date": d, "day": rows[[r["date"] for r in rows].index(d)]["day_of_week"],
-         **v, "rel": round(100 * v["success"] / v["total"], 2) if v["total"] else 0}
+        {"date": d, **v,
+         "rel": round(100 * v["success"] / v["total"], 2) if v["total"] else 0}
         for d, v in sorted(by_date.items())
     ]
     return {
-        "total":      total,
+        "total":      sum(by_action.values()),
         "by_action":  dict(by_action),
         "by_docklet": dict(by_docklet),
         "daily":      daily,
     }
+
 
 def q(sql, params):
     job = client.query(sql, job_config=bigquery.QueryJobConfig(
@@ -156,12 +166,13 @@ def hub_detail(hub_id: str,
         if time.time() - _ts < _CACHE_TTL:
             return _data
 
-    # ── Fire all 21 queries in parallel ──────────────────────────────────
+    # ── Fire all queries in parallel ─────────────────────────────────────
     with ThreadPoolExecutor(max_workers=15) as ex:
+        # Headline KPIs — GENUINE APP-TRIGGERED events only (observed excluded).
         f_kpi      = ex.submit(q, f"""
             SELECT COUNT(*) AS total, COUNTIF(success) AS success,
                    COALESCE(ROUND(100*COUNTIF(success)/NULLIF(COUNT(*),0),2),0) AS reliability
-            FROM {AL} WHERE hub_id=@hub_id
+            FROM {AL} WHERE hub_id=@hub_id AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
         f_le       = ex.submit(q, f"""
             SELECT ROUND(AVG(latency_ms)) AS avg,
@@ -180,17 +191,34 @@ def hub_detail(hub_id: str,
               AND use_case IN ('Local App Control','Device Bind (App)')
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ORDER BY event_timestamp DESC LIMIT 50""", p)
+        # Hub → SNAP → Hub = real device-actuation latency = the gap between when the
+        # hub sent the Matter command and when the device confirmed its new state.
+        # (NOT ha_processing_latency_ms — that's ~0, just HA's internal handling.)
+        # gap > 0 excludes rows the hub hasn't stamped with distinct times yet.
         f_hs       = ex.submit(q, f"""
-            SELECT ROUND(AVG(ha_processing_latency_ms)) AS avg,
-                   APPROX_QUANTILES(ha_processing_latency_ms,100)[OFFSET(50)] AS p50,
-                   APPROX_QUANTILES(ha_processing_latency_ms,100)[OFFSET(95)] AS p95
-            FROM {HL} WHERE hub_id=@hub_id AND ha_processing_latency_ms IS NOT NULL
-              AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
+            SELECT ROUND(AVG(gap)) AS avg,
+                   APPROX_QUANTILES(gap,100)[OFFSET(50)] AS p50,
+                   APPROX_QUANTILES(gap,100)[OFFSET(95)] AS p95
+            FROM (
+              SELECT TIMESTAMP_DIFF(SAFE_CAST(snap_state_change_ts AS TIMESTAMP),
+                                    SAFE_CAST(matter_command_ts  AS TIMESTAMP),
+                                    MILLISECOND) AS gap
+              FROM {HL} WHERE hub_id=@hub_id
+                AND matter_command_ts IS NOT NULL AND snap_state_change_ts IS NOT NULL
+                AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
+            ) WHERE gap > 0""", p)
         f_hs_ev    = ex.submit(q, f"""
             SELECT event_timestamp AS ts, entity_id AS dev, friendly_name,
-                   ha_event_type AS uc, ha_processing_latency_ms AS lat, room,
-                   matter_command_ts AS matter_ts, snap_state_change_ts AS snap_ts
-            FROM {HL} WHERE hub_id=@hub_id AND ha_processing_latency_ms IS NOT NULL
+                   ha_event_type AS uc, room,
+                   matter_command_ts AS matter_ts, snap_state_change_ts AS snap_ts,
+                   TIMESTAMP_DIFF(SAFE_CAST(snap_state_change_ts AS TIMESTAMP),
+                                  SAFE_CAST(matter_command_ts  AS TIMESTAMP),
+                                  MILLISECOND) AS lat
+            FROM {HL} WHERE hub_id=@hub_id
+              AND matter_command_ts IS NOT NULL AND snap_state_change_ts IS NOT NULL
+              AND TIMESTAMP_DIFF(SAFE_CAST(snap_state_change_ts AS TIMESTAMP),
+                                 SAFE_CAST(matter_command_ts  AS TIMESTAMP),
+                                 MILLISECOND) > 0
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ORDER BY event_timestamp DESC LIMIT 50""", p)
         f_per_uc   = ex.submit(q, f"""
@@ -199,7 +227,7 @@ def hub_detail(hub_id: str,
                    APPROX_QUANTILES(latency_ms,100)[OFFSET(95)] AS p95,
                    ROUND(STDDEV(latency_ms)) AS stddev,
                    COUNT(*) AS count, COUNTIF(success) AS success
-            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL
+            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY use_case""", p)
         f_per_uc_ev = ex.submit(q, f"""
@@ -208,7 +236,7 @@ def hub_detail(hub_id: str,
                      friendly_name, latency_ms AS lat, trigger_method AS src, room,
                      ROW_NUMBER() OVER (PARTITION BY use_case
                                         ORDER BY event_timestamp DESC) AS rn
-              FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL
+              FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL AND {APP_UC}
                 AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ) WHERE rn <= 100
             ORDER BY ts DESC""", p)
@@ -220,7 +248,7 @@ def hub_detail(hub_id: str,
                         WHEN latency_ms<5000 THEN '2-5s'
                         ELSE '>5s' END AS bucket,
                    COUNT(*) AS cnt
-            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL
+            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY use_case, bucket""", p)
         f_bcount   = ex.submit(q, f"""
@@ -230,7 +258,7 @@ def hub_detail(hub_id: str,
                         WHEN latency_ms<5000 THEN '2-5s'
                         ELSE '>5s' END AS bucket,
                    COUNT(*) AS cnt
-            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL
+            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY bucket ORDER BY MIN(latency_ms)""", p)
         f_bk       = ex.submit(q, f"""
@@ -242,7 +270,7 @@ def hub_detail(hub_id: str,
                    event_timestamp AS ts, entity_id AS dev, friendly_name,
                    use_case AS uc, latency_ms AS lat, trigger_method AS src,
                    room, success
-            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL
+            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             LIMIT 500""", p)
         f_daily    = ex.submit(q, f"""
@@ -251,52 +279,48 @@ def hub_detail(hub_id: str,
                    APPROX_QUANTILES(latency_ms,100 IGNORE NULLS)[OFFSET(50)] AS p50,
                    ROUND(100*COUNTIF(latency_ms<1000)/
                          NULLIF(COUNTIF(latency_ms IS NOT NULL),0),2) AS ns
-            FROM {AL} WHERE hub_id=@hub_id
+            FROM {AL} WHERE hub_id=@hub_id AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY date ORDER BY date""", p)
-        f_heat     = ex.submit(q, f"""
-            SELECT day_of_week, hour, COUNT(*) AS events,
-                   COUNTIF(use_case IN ('Local App Control','Device Bind (App)')) AS app,
-                   COUNTIF(use_case='Docklet Press (App)') AS dock,
-                   COUNTIF(use_case='Remote App Control')  AS remote,
-                   COUNTIF(use_case='Observed Change (App)') AS auto
-            FROM {AL} WHERE hub_id=@hub_id
-              AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
-            GROUP BY day_of_week, hour""", p)
+        # (Heatmaps are built client-side from the complete event pool — no backend
+        #  heatmap query needed; that keeps cell counts equal to the drill-downs.)
         f_fail     = ex.submit(q, f"""
             SELECT event_timestamp AS ts, use_case AS uc, entity_id AS dev,
                    friendly_name, failure_reason AS reason, room,
                    trigger_method AS src, CAST(latency_ms AS STRING) AS lat,
                    network_type AS net, COALESCE(docklet_id,'') AS dock
-            FROM {AL} WHERE hub_id=@hub_id AND success=false
+            FROM {AL} WHERE hub_id=@hub_id AND success=false AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ORDER BY event_timestamp DESC LIMIT 100""", p)
         f_src      = ex.submit(q, f"""
             SELECT use_case, COUNT(*) AS total, COUNTIF(success) AS success,
                    COUNTIF(NOT success) AS fail,
                    ROUND(100*COUNTIF(success)/COUNT(*),2) AS rel
-            FROM {AL} WHERE hub_id=@hub_id
+            FROM {AL} WHERE hub_id=@hub_id AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY use_case""", p)
+        # Hub device-processing event count — real device events only (excludes HA
+        # system noise: service_registered, entity_registry_updated, panels_updated…)
         f_ha_cnt   = ex.submit(q, f"""
             SELECT COUNT(*) AS cnt FROM {HL}
             WHERE hub_id=@hub_id
+              AND ha_event_type IN ('call_service','state_changed')
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
         f_fbr      = ex.submit(q, f"""
             SELECT failure_reason AS reason, COUNT(*) AS cnt
-            FROM {AL} WHERE hub_id=@hub_id AND success=false AND failure_reason IS NOT NULL
+            FROM {AL} WHERE hub_id=@hub_id AND success=false AND failure_reason IS NOT NULL AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY failure_reason ORDER BY cnt DESC""", p)
         f_fbr_ev   = ex.submit(q, f"""
             SELECT failure_reason AS reason, event_timestamp AS ts,
                    entity_id AS dev, friendly_name, use_case AS uc,
                    trigger_method AS src, room, CAST(latency_ms AS STRING) AS lat
-            FROM {AL} WHERE hub_id=@hub_id AND success=false AND failure_reason IS NOT NULL
+            FROM {AL} WHERE hub_id=@hub_id AND success=false AND failure_reason IS NOT NULL AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ORDER BY event_timestamp DESC LIMIT 300""", p)
         f_fbd      = ex.submit(q, f"""
             SELECT entity_id AS dev, failure_reason AS reason, COUNT(*) AS cnt
-            FROM {AL} WHERE hub_id=@hub_id AND success=false
+            FROM {AL} WHERE hub_id=@hub_id AND success=false AND {APP_UC}
               AND SPLIT(entity_id,'.')[OFFSET(0)] NOT IN ('scene','automation','script','group')
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY entity_id, failure_reason ORDER BY entity_id, cnt DESC""", p)
@@ -305,28 +329,21 @@ def hub_detail(hub_id: str,
                    COUNT(*) AS total, COUNTIF(success=true) AS success,
                    ROUND(100*COUNTIF(success=true)/COUNT(*),2) AS rel,
                    APPROX_QUANTILES(latency_ms,100 IGNORE NULLS)[OFFSET(50)] AS p50
-            FROM {AL} WHERE hub_id=@hub_id
+            FROM {AL} WHERE hub_id=@hub_id AND {APP_UC}
               AND SPLIT(entity_id,'.')[OFFSET(0)] NOT IN ('scene','automation','script','group')
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY entity_id ORDER BY total DESC LIMIT 50""", p)
         f_usage    = ex.submit(q, f"""
             SELECT COUNTIF(use_case IN ('Local App Control','Device Bind (App)')) AS app,
-                   COUNTIF(use_case='Docklet Press (App)') AS docklet,
                    COUNTIF(use_case='Remote App Control')  AS remote,
-                   COUNTIF(use_case='Observed Change (App)') AS direct,
-                   COUNTIF(entity_id LIKE 'scene.%' AND use_case='Observed Change (App)') AS scene_count
+                   COUNTIF(use_case='Observed Change (App)') AS direct
             FROM {AL} WHERE hub_id=@hub_id
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
         f_snap_count = ex.submit(q, f"""
             SELECT COUNT(DISTINCT entity_id) AS cnt
-            FROM {AL} WHERE hub_id=@hub_id
+            FROM {AL} WHERE hub_id=@hub_id AND {APP_UC}
               AND SPLIT(entity_id,'.')[OFFSET(0)] NOT IN ('scene','automation','script','group')
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
-        f_heat_fail  = ex.submit(q, f"""
-            SELECT day_of_week, hour, COUNT(*) AS events
-            FROM {AL} WHERE hub_id=@hub_id AND success=false
-              AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
-            GROUP BY day_of_week, hour""", p)
         # Hub→App WS push = ws_confirmation_ts − rest_response_ts over the FULL
         # window (timestamps stored as STRING → SAFE_CAST). diff >= 0 guards
         # against clock-skew rows where ws_conf precedes rest_resp.
@@ -343,19 +360,26 @@ def hub_detail(hub_id: str,
                 AND rest_response_ts IS NOT NULL AND ws_confirmation_ts IS NOT NULL
                 AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ) WHERE diff >= 0""", p)
-        # Observed Change events have NULL latency, so every latency-filtered
-        # sample query skips them — fetch them separately for the Log Center.
-        f_obs_ev     = ex.submit(q, f"""
+        # COMPLETE app-triggered event list — the Log Center is built from this so
+        # its counts reconcile exactly with the headline cards (no sampling).
+        f_all_ev     = ex.submit(q, f"""
             SELECT event_timestamp AS ts, entity_id AS dev, friendly_name,
-                   use_case AS uc, room, network_type AS net,
-                   trigger_method AS src, success, failure_reason
-            FROM {AL} WHERE hub_id=@hub_id AND use_case='Observed Change (App)'
+                   use_case AS uc, latency_ms AS lat, room, network_type AS net,
+                   trigger_method AS src, success, failure_reason AS reason,
+                   tap_ts AS tap, command_sent_ts AS cmd_sent,
+                   rest_response_ts AS rest_resp, ws_confirmation_ts AS ws_conf
+            FROM {AL} WHERE hub_id=@hub_id AND {APP_UC}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
-            ORDER BY event_timestamp DESC LIMIT 200""", p)
-        # Hub-recorded scene activations & automation runs from ha_logs.
-        # Only genuine activation signals: call_service on scene.* and
-        # automation_triggered — scene/automation state_changed rows are
-        # mostly HA-restart state restores, not real activations.
+            ORDER BY event_timestamp DESC LIMIT 20000""", p)
+        # Observed Change (App) — passive app observation. Kept for INTERNAL
+        # reference only; not shown as a user-facing category.
+        f_obs_cnt    = ex.submit(q, f"""
+            SELECT COUNT(*) AS cnt FROM {AL}
+            WHERE hub_id=@hub_id AND use_case='Observed Change (App)'
+              AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
+        # Hub-recorded scene activations & automation runs from ha_logs (reliable —
+        # recorded even when the app is closed). This is the ONLY source for
+        # scene/automation counts anywhere in the dashboard.
         f_hub_obs_ev = ex.submit(q, f"""
             SELECT event_timestamp AS ts, entity_id AS dev, friendly_name,
                    CASE WHEN entity_id LIKE 'scene.%' THEN 'Scene Activated (Hub)'
@@ -364,30 +388,61 @@ def hub_detail(hub_id: str,
               AND ((entity_id LIKE 'scene.%'      AND ha_event_type='call_service')
                 OR (entity_id LIKE 'automation.%' AND ha_event_type='automation_triggered'))
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
-            ORDER BY event_timestamp DESC LIMIT 200""", p)
+            ORDER BY event_timestamp DESC LIMIT 2000""", p)
         f_hub_obs_cnt = ex.submit(q, f"""
             SELECT COUNTIF(entity_id LIKE 'scene.%'      AND ha_event_type='call_service')         AS hub_scene,
                    COUNTIF(entity_id LIKE 'automation.%' AND ha_event_type='automation_triggered') AS hub_auto
             FROM {HL} WHERE hub_id=@hub_id
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
+        # Dock action-type USAGE breakdown (dock_logs — increment/decrement/toggle).
+        # Used ONLY for the usage panel, NOT for reliability.
         f_dock     = ex.submit(q, f"""
             SELECT date, day_of_week, dock_id, docklet_id, action,
                    total_action_count, success_count, failure_count
             FROM `{PROJECT}.schnell_analytics.dock_logs`
             WHERE hub_id=@hub_id
               AND DATE(date) BETWEEN @from_date AND @to_date""", p)
+        # Dock press events (real, from ha_logs) — each press marked success/fail by
+        # whether its context_id produced an on/off state. This ONE list feeds both
+        # the Log Center and the dock reliability, so they always reconcile.
+        f_dock_ev  = ex.submit(q, f"""
+            WITH presses AS (
+              SELECT event_timestamp AS ts, entity_id AS dev, friendly_name,
+                     dock_id, docklet_id, action, room, context_id
+              FROM {HL} WHERE hub_id=@hub_id AND dock_id IS NOT NULL AND dock_id!=''
+                AND ha_event_type='call_service'
+                AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
+            ),
+            outcomes AS (
+              SELECT context_id, LOGICAL_OR(new_state IN ('on','off')) AS ok
+              FROM {HL} WHERE hub_id=@hub_id AND ha_event_type='state_changed'
+                AND context_id IS NOT NULL
+                AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
+              GROUP BY context_id
+            )
+            SELECT p.ts, p.dev, p.friendly_name, p.dock_id, p.docklet_id, p.action,
+                   p.room, COALESCE(o.ok, false) AS success
+            FROM presses p LEFT JOIN outcomes o USING(context_id)
+            ORDER BY p.ts DESC LIMIT 20000""", p)
+        # Note: `snap:` log_source rows are the SNAP board actuating a device — the
+        # device-layer of an action already triggered by app/dock/automation. They are
+        # NOT counted separately (that would double-count the trigger). The SNAP
+        # timestamps still feed the Hub → SNAP → Hub *latency* (f_hs), which is timing,
+        # not a count.
 
     # ── Collect results & post-process (fast, sequential) ────────────────
     kpi = f_kpi.result()[0]
 
     le     = f_le.result()
-    le_kpi = le[0] if le else {"avg":0,"p50":0,"p95":0}
+    # APPROX_QUANTILES/AVG return NULL for an empty window — coalesce to 0 so the
+    # UI never renders "nullms".
+    le_kpi = {k: (le[0].get(k) or 0) for k in ("avg","p50","p95")} if le else {"avg":0,"p50":0,"p95":0}
     le_events = f_le_ev.result()
     for e in le_events:
         e["src"] = uc_src(e.get("uc"))
 
     hs     = f_hs.result()
-    hs_kpi = hs[0] if hs else {"avg":0,"p50":0,"p95":0}
+    hs_kpi = {k: (hs[0].get(k) or 0) for k in ("avg","p50","p95")} if hs else {"avg":0,"p50":0,"p95":0}
     hs_events = f_hs_ev.result()
 
     per_uc_rows = f_per_uc.result()
@@ -421,36 +476,27 @@ def hub_detail(hub_id: str,
 
     daily = f_daily.result()
 
-    heatmap, heatmap_detail = {}, {}
-    for r in f_heat.result():
-        k = f"{r['day_of_week']}_{r['hour']}"
-        heatmap[k] = r["events"]
-        heatmap_detail[k] = {"app":r["app"],"dock":r["dock"],
-                              "remote":r["remote"],"auto":r["auto"]}
-
-    heatmap_fail = {}
-    for r in f_heat_fail.result():
-        k = f"{r['day_of_week']}_{r['hour']}"
-        heatmap_fail[k] = r["events"]
-
     ha_rows      = f_hub_app.result()
     ha_raw       = ha_rows[0] if ha_rows else {}
     hub_app_kpi  = {"avg": ha_raw.get("avg") or 0,
                     "p50": ha_raw.get("p50") or 0,
                     "p95": ha_raw.get("p95") or 0}
 
-    obs_events = f_obs_ev.result()
-    for e in obs_events:
+    # Complete app-triggered event list — Log Center source of truth
+    all_events = f_all_ev.result()
+    for e in all_events:
         e["src"] = uc_src(e.get("uc"))
 
     hub_obs_events = f_hub_obs_ev.result()
     for e in hub_obs_events:
-        e["src"] = "direct_hub"   # 'direct' substring → matches Observed Change filter
+        e["src"] = "direct_hub"
 
     hub_obs_rows = f_hub_obs_cnt.result()
     hub_obs      = hub_obs_rows[0] if hub_obs_rows else {}
     hub_scene_cnt = int(hub_obs.get("hub_scene", 0) or 0)
     hub_auto_cnt  = int(hub_obs.get("hub_auto",  0) or 0)
+
+    obs_cnt = int((f_obs_cnt.result() or [{}])[0].get("cnt", 0) or 0)
 
     failures = []
     for f in f_fail.result():
@@ -461,9 +507,7 @@ def hub_detail(hub_id: str,
     src_rows = f_src.result()
     src_rel  = {r["use_case"]:{k:v for k,v in r.items() if k!="use_case"} for r in src_rows}
     a_rows   = [r for r in src_rows if "App Control" in (r.get("use_case") or "")]
-    d_rows   = [r for r in src_rows if "Docklet"     in (r.get("use_case") or "")]
     at=sum(r["total"] for r in a_rows); as_=sum(r["success"] for r in a_rows)
-    dt=sum(r["total"] for r in d_rows); ds =sum(r["success"] for r in d_rows)
 
     ha_cnt_rows       = f_ha_cnt.result()
     hub_to_snap_count = ha_cnt_rows[0]["cnt"] if ha_cnt_rows else 0
@@ -493,45 +537,84 @@ def hub_detail(hub_id: str,
         for r in f_dev.result()
     ]
 
-    ur          = (f_usage.result() or [{}])[0]
-    app_cnt     = int(ur.get("app",         0) or 0)
-    docklet_cnt = int(ur.get("docklet",     0) or 0)
-    remote_cnt  = int(ur.get("remote",      0) or 0)
-    direct_cnt  = int(ur.get("direct",      0) or 0)
-    scene_cnt   = int(ur.get("scene_count", 0) or 0)
-    h_total     = app_cnt + docklet_cnt
-    snap_device_cnt = int((f_snap_count.result() or [{}])[0].get("cnt", 0) or 0)
-    usage = {
-        "app": app_cnt, "docklet": docklet_cnt,
-        "remote": remote_cnt, "direct": direct_cnt,
-        "app_ratio":      round(100 * app_cnt     / h_total, 2) if h_total else 0,
-        "dock_ratio":     round(100 * docklet_cnt / h_total, 2) if h_total else 0,
-        "observed_per_day": round(direct_cnt / days_count, 2),
-        # app-observed counts — kept for reference only; the app misses events
-        # while closed and can log state-restore bursts as activations
-        "scene_total":    scene_cnt,
-        "scene_per_day":  round(scene_cnt / days_count, 2),
-        "snap_devices":   snap_device_cnt,
-        # hub-recorded counts (ha_logs) — the reliable source, used by the tiles
-        "hub_scene_total":   hub_scene_cnt,
-        "hub_scene_per_day": round(hub_scene_cnt / days_count, 2),
-        "hub_auto_total":    hub_auto_cnt,
-        "hub_auto_per_day":  round(hub_auto_cnt / days_count, 2),
-    }
-
-    # dock_logs rows scoped to this hub + date window, same as app/ha logs
+    # Dock: reliability from ha_logs (context_id-linked press→outcome); the
+    # dock_logs action rows feed only the usage breakdown.
     dock_rows_filtered = [
         {**r, "total_action_count": int(r["total_action_count"] or 0),
               "success_count":      int(r["success_count"]      or 0),
               "failure_count":      int(r["failure_count"]      or 0)}
         for r in f_dock.result()
     ]
+    dock_ev     = f_dock_ev.result()
+    # Fold dock press failures into the failure tables so "Failures by Reason /
+    # Device" reconcile with the all-source Failures count. A dock failure = the
+    # bound device never reached on/off (reason: DEVICE_UNAVAILABLE).
+    _dock_fail_evs = [e for e in dock_ev if not e.get("success")]
+    if _dock_fail_evs:
+        _fbr = fail_by_reason.setdefault("DEVICE_UNAVAILABLE", {"count": 0, "events": []})
+        _fbr["count"] += len(_dock_fail_evs)
+        _fbr["events"].extend({
+            "ts": e["ts"], "dev": e["dev"], "friendly_name": e.get("friendly_name"),
+            "uc": "Dock Control", "src": "docklet", "room": e.get("room"), "lat": "N/A"
+        } for e in _dock_fail_evs[:300])
+        for e in _dock_fail_evs:
+            dev = e["dev"] or e.get("docklet_id") or "unknown"
+            _fbd = fail_by_device.setdefault(dev, {"count": 0, "reasons": {}})
+            _fbd["reasons"]["DEVICE_UNAVAILABLE"] = _fbd["reasons"].get("DEVICE_UNAVAILABLE", 0) + 1
+            _fbd["count"] += 1
+    dock_stats      = _build_dock_stats(dock_ev, dock_rows_filtered)
     dock_usage_data = _build_dock_usage(dock_rows_filtered)
+    # Dock press counts + reliability — from the same dock_ev list (single source)
+    dock_press_total = len(dock_ev)
+    dock_succ        = sum(1 for e in dock_ev if e.get("success"))
+    dock_fail        = dock_press_total - dock_succ
+    dock_press_rel   = round(100 * dock_succ / dock_press_total, 2) if dock_press_total else 0
+    # Dock is a real trigger with pass/fail, so it belongs in the per-source table.
+    if dock_press_total:
+        src_rel["Dock Control"] = {"total": dock_press_total, "success": dock_succ,
+                                   "fail": dock_fail, "rel": dock_press_rel}
+
+    ur          = (f_usage.result() or [{}])[0]
+    app_cnt     = int(ur.get("app",    0) or 0)
+    remote_cnt  = int(ur.get("remote", 0) or 0)
+    # Dock event count comes from ha_logs presses (reliable, always-on); the app
+    # only *observes* dock presses while open, so app-observed dock is not used.
+    dock_cnt    = dock_press_total
+    h_total     = app_cnt + dock_cnt
+    snap_device_cnt = int((f_snap_count.result() or [{}])[0].get("cnt", 0) or 0)
+    usage = {
+        "app": app_cnt, "remote": remote_cnt,
+        "docklet": dock_cnt,                # dock device activations (ha_logs)
+        "direct": obs_cnt,                  # observed — INTERNAL reference only
+        "app_ratio":  round(100 * app_cnt  / h_total, 2) if h_total else 0,
+        "dock_ratio": round(100 * dock_cnt / h_total, 2) if h_total else 0,
+        "snap_devices":   snap_device_cnt,
+        # scene/automation — hub-recorded (ha_logs) is the only source
+        "hub_scene_total":   hub_scene_cnt,
+        "hub_scene_per_day": round(hub_scene_cnt / days_count, 2),
+        "hub_auto_total":    hub_auto_cnt,
+        "hub_auto_per_day":  round(hub_auto_cnt / days_count, 2),
+    }
+
+    # ── ALL-SOURCE totals — every reliable event, whoever triggered it ──────────
+    # Total activity = app commands + dock presses + scene activations + automation
+    # runs. Success/fail spans app + dock (both have a real outcome); scene &
+    # automation runs are counted as successful activity (the hub recorded them).
+    total_activity   = int(kpi["total"]) + dock_press_total + hub_scene_cnt + hub_auto_cnt
+    app_fail         = int(kpi["total"]) - int(kpi["success"])
+    activity_success = int(kpi["success"]) + dock_succ + hub_scene_cnt + hub_auto_cnt
+    activity_fail    = app_fail + dock_fail
+    activity_reliability = round(100 * activity_success / total_activity, 2) if total_activity else 0
 
     result = {
-        "total":       kpi["total"],
-        "success":     kpi["success"],
-        "reliability": kpi["reliability"],
+        "total":          kpi["total"],        # app-triggered count
+        "success":        kpi["success"],      # app-triggered successes
+        "reliability":    kpi["reliability"],  # app-command reliability (per-source detail)
+        # all-source headline numbers (Total Events / Reliability / Failures tiles)
+        "total_activity":       total_activity,
+        "activity_success":     activity_success,
+        "activity_fail":        activity_fail,
+        "activity_reliability": activity_reliability,
         "speed": {
             "hub_snap_hub": {**hs_kpi, "events": hs_events},
             "local_e2e":    {**le_kpi, "events": le_events},
@@ -542,25 +625,23 @@ def hub_detail(hub_id: str,
             "per_uc":        per_uc,
         },
         "daily":          daily,
-        "heatmap":        heatmap,
-        "heatmap_detail": heatmap_detail,
-        "heatmap_fail":   heatmap_fail,
         "failures":       failures,
         "reliability_detail": {
             "app_trigger_feedback":  round(100*as_/at,2) if at else 0,
-            "dock_trigger_feedback": round(100*ds/dt,2)  if dt else 0,
+            "dock_trigger_feedback": dock_press_rel,
             "hub_to_app":        round(100*as_/at,2) if at else 0,
             "app_triggers":      at,
             "app_feedbacks":     as_,
-            "dock_triggers":     dt,
-            "dock_feedbacks":    ds,
+            "dock_triggers":     dock_press_total,
+            "dock_feedbacks":    dock_succ,
             "hub_to_snap_count": hub_to_snap_count,
             "src_rel":           src_rel,
-            "dock_stats":        _build_dock_stats(dock_rows_filtered),
+            "dock_stats":        dock_stats,
         },
-        "dock_usage":     dock_usage_data,  # from dock_logs (Google Sheet)
-        "observed_events": obs_events,
-        "hub_observed_events": hub_obs_events,
+        "dock_usage":     dock_usage_data,
+        "dock_events":    dock_ev,                # ha_logs dock activations
+        "all_events":     all_events,             # complete app-triggered list
+        "hub_observed_events": hub_obs_events,    # scene/automation from ha_logs
         "usage":          usage,
         "devices":        devices,
         "fail_by_reason": fail_by_reason,
@@ -569,11 +650,13 @@ def hub_detail(hub_id: str,
     _HUB_CACHE[_ck] = (time.time(), result)
     return result
 
-_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+# Static UI lives in Analytics/public — the single source of truth, served both
+# here (local dev / container) and by Firebase Hosting in production.
+_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "public")
 
 @app.get("/")
 def serve_dashboard():
-    return FileResponse(os.path.join(_root, "dashboard.html"))
+    return FileResponse(os.path.join(_root, "index.html"))
 
-# Serve dashboard_app.js and any other static files from Analytics/
+# Serve dashboard_app.js and any other static files from Analytics/public/
 app.mount("/", StaticFiles(directory=_root), name="static")
