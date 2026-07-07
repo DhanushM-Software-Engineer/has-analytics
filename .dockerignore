@@ -1,0 +1,8 @@
+.git
+.gitignore
+.DS_Store
+*.md
+*.gs
+analytics-api/venv
+analytics-api/__pycache__
+**/__pycache__
