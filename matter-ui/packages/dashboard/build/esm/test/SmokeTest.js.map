@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": ["../../../test/SmokeTest.ts"],
+  "mappings": "AAAA;AAAA;AAAA;AAAA;AAAA;AAMA,SAAS,0BAA0B,MAAM;AACrC,KAAG,QAAQ,MAAM;AACb,WAAO,IAAI,CAAC,EAAE,GAAG,MAAM,CAAC;AAAA,EAC5B,CAAC;AACL,CAAC;",
+  "names": []
+}

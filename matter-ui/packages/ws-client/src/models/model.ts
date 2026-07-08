@@ -1,0 +1,566 @@
+/**
+ * @license
+ * Copyright 2025-2026 Open Home Foundation
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { MatterNodeData } from "./node.js";
+// Re-export so consumers can import the MatterNodeData type from this module
+export type { MatterNodeData } from "./node.js";
+
+/** Attribute data stored as path -> value mapping */
+export type AttributesData = { [key: string]: unknown };
+
+/**
+ * Single Thread Border Router record discovered via mDNS.
+ *
+ * The extended address (xa) is the 64-bit Thread MAC of the border agent and serves as
+ * the primary key. It is the same value as ThreadNetworkDiagnostics.NeighborTable.extAddress
+ * for a BR that is itself a Thread router, which is what allows the dashboard to join
+ * BRs onto external-device entries seen in commissioned-node neighbor tables.
+ */
+export interface BorderRouterEntry {
+    /** 16-char uppercase hex of the 64-bit Thread MAC. Primary key. */
+    extAddressHex: string;
+    /** 16-char uppercase hex of the extended PAN ID, when known. */
+    extendedPanIdHex?: string;
+    /** Friendly Thread network name (`_meshcop` TXT "nn"). */
+    networkName?: string;
+    /** Vendor name (`_meshcop` TXT "vn"). */
+    vendorName?: string;
+    /** Model name (`_meshcop` TXT "mn"). */
+    modelName?: string;
+    /** mDNS hostname from the SRV target, e.g. "Kuche.local.". */
+    hostname?: string;
+    /** Sorted IPv4 + IPv6 addresses resolved from the SRV target's A/AAAA records. */
+    addresses: string[];
+    /** Service port from the `_meshcop` SRV record. */
+    meshcopPort?: number;
+    /** Service port from the `_trel` SRV record. */
+    trelPort?: number;
+    /** Thread version, e.g. "1.3.0" (`_meshcop` TXT "tv"). */
+    threadVersion?: string;
+    /** Border agent ID hex (`_meshcop` TXT "dd"); not always present. */
+    borderAgentIdHex?: string;
+    /** Raw 4-byte state bitmap as hex (`_meshcop` TXT "sb"). Flag parsing left to dashboard. */
+    stateBitmapHex?: string;
+    /** Active timestamp as hex (`_meshcop` TXT "at"). */
+    activeTimestampHex?: string;
+    /** Partition ID as hex (`_meshcop` TXT "pt"). */
+    partitionIdHex?: string;
+    /** Vendor-specific data domain name (`_meshcop` TXT "dn"). */
+    domainName?: string;
+    /** Which mDNS source(s) contributed to this entry. */
+    sources: ("meshcop" | "trel")[];
+    /**
+     * Epoch milliseconds of the most recent successful mDNS discovery for this entry.
+     * Frozen when `sources` becomes empty (the entry is "stale"); updated on every
+     * re-discovery. Stale entries are retained server-side for at least 24h after
+     * `lastSeen`; the actual prune is lazy and happens on the next `get`, `list`,
+     * or mDNS discovery event after the window elapses, so an entry may linger
+     * longer than 24h if there is no activity. Consumers can derive stale state
+     * via `sources.length === 0` and stale age via `Date.now() - lastSeen`.
+     */
+    lastSeen: number;
+}
+
+export type WebRtcEventType = "offer" | "answer" | "ice_candidates" | "end";
+
+export interface WebRtcIceCandidate {
+    candidate: string;
+    sdpMid: string | null;
+    sdpMLineIndex: number | null;
+}
+
+export interface WebRtcOfferData {
+    sdp: string;
+    ice_servers?: unknown[];
+    ice_transport_policy?: string;
+}
+
+export interface WebRtcAnswerData {
+    sdp: string;
+}
+
+export interface WebRtcIceCandidatesData {
+    ice_candidates: WebRtcIceCandidate[];
+}
+
+export interface WebRtcEndData {
+    reason: number;
+}
+
+interface WebRtcCallbackBase {
+    webrtc_session_id: number;
+    node_id: number | bigint;
+    endpoint_id: number;
+    fabric_index: number;
+}
+
+export type WebRtcCallbackData =
+    | (WebRtcCallbackBase & { event_type: "offer"; data: WebRtcOfferData | null })
+    | (WebRtcCallbackBase & { event_type: "answer"; data: WebRtcAnswerData | null })
+    | (WebRtcCallbackBase & { event_type: "ice_candidates"; data: WebRtcIceCandidatesData | null })
+    | (WebRtcCallbackBase & { event_type: "end"; data: WebRtcEndData | null });
+
+export interface APICommands {
+    start_listening: {
+        requestArgs: Record<string, never>;
+        response: Array<MatterNodeData>;
+    };
+    diagnostics: {
+        requestArgs: Record<string, never>;
+        response: {
+            info: ServerInfoMessage;
+            nodes: Array<MatterNodeData>;
+            events: Array<MatterNodeEvent>;
+        };
+    };
+    server_info: {
+        requestArgs: Record<string, never>;
+        response: ServerInfoMessage;
+    };
+    get_nodes: {
+        requestArgs: { only_available?: boolean };
+        response: Array<MatterNodeData>;
+    };
+    get_node: {
+        requestArgs: { node_id: number | bigint };
+        response: MatterNodeData;
+    };
+    commission_with_code: {
+        requestArgs: { code: string; network_only?: boolean };
+        response: MatterNodeData;
+    };
+    commission_on_network: {
+        requestArgs: {
+            setup_pin_code: number;
+            /** Discovery filter type: 0=None, 1=ShortDiscriminator, 2=LongDiscriminator, 3=VendorId, 4=DeviceType */
+            filter_type?: number;
+            /** Filter value (discriminator, vendor ID, or device type depending on filter_type) */
+            filter?: number;
+            /** Direct IP address for commissioning */
+            ip_addr?: string;
+        };
+        response: MatterNodeData;
+    };
+    set_wifi_credentials: {
+        requestArgs: { ssid: string; credentials: string };
+        response: Record<string, never>;
+    };
+    set_thread_dataset: {
+        requestArgs: { dataset: string };
+        response: Record<string, never>;
+    };
+    remove_wifi_credentials: {
+        requestArgs: Record<string, never>;
+        response: Record<string, never>;
+    };
+    remove_thread_dataset: {
+        requestArgs: Record<string, never>;
+        response: Record<string, never>;
+    };
+    get_thread_border_routers: {
+        requestArgs: Record<string, never>;
+        response: BorderRouterEntry[];
+    };
+    open_commissioning_window: {
+        requestArgs: {
+            node_id: number | bigint;
+            timeout?: number;
+            iteration?: number;
+            /**
+             * Commissioning window type: 0=Enhanced, 1=Basic.
+             * Currently ignored by the server (always uses Enhanced).
+             */
+            option?: 0 | 1;
+            /** Discriminator value (null for random) */
+            discriminator?: number | null;
+        };
+        response: CommissioningParameters;
+    };
+    discover: {
+        requestArgs: Record<string, never>;
+        response: CommissionableNodeData[];
+    };
+    interview_node: {
+        requestArgs: { node_id: number | bigint };
+        response: null;
+    };
+    device_command: {
+        requestArgs: {
+            node_id: number | bigint;
+            endpoint_id: number;
+            cluster_id: number;
+            command_name: string;
+            payload: unknown;
+            /** Response type hint passed by the client SDK (currently unused by server) */
+            response_type: unknown;
+            timed_request_timeout_ms?: number | null;
+            interaction_timeout_ms?: number | null;
+        };
+        response: unknown;
+    };
+    send_webrtc_provider_command: {
+        requestArgs: {
+            node_id: number | bigint;
+            endpoint_id: number;
+            command_name: "ProvideOffer" | "SolicitOffer";
+            payload: Record<string, unknown>;
+        };
+        response: unknown;
+    };
+    remove_node: {
+        requestArgs: { node_id: number | bigint };
+        response: null;
+    };
+    get_vendor_names: {
+        requestArgs: { filter_vendors?: Array<number> };
+        response: { [key: string]: string };
+    };
+    subscribe_attribute: {
+        requestArgs: Record<string, never>;
+        response: Record<string, never>;
+    };
+    read_attribute: {
+        requestArgs: {
+            node_id: number | bigint;
+            /** Single attribute path or array of paths. Supports wildcards (*) for cluster and attribute IDs. */
+            attribute_path: string | string[];
+            /** Filter by fabric (default: false) */
+            fabric_filtered?: boolean;
+        };
+        response: AttributesData;
+    };
+    write_attribute: {
+        requestArgs: {
+            node_id: number | bigint;
+            attribute_path: string;
+            value: unknown;
+        };
+        response: Array<{
+            Path: { EndpointId: number; ClusterId: number; AttributeId: number };
+            Status: number;
+        }>;
+    };
+    ping_node: {
+        requestArgs: { node_id: number | bigint; attempts?: number };
+        response: NodePingResult;
+    };
+    import_test_node: {
+        requestArgs: { dump: string };
+        response: null;
+    };
+    get_node_ip_addresses: {
+        requestArgs: { node_id: number | bigint; prefer_cache?: boolean; scoped?: boolean };
+        response: Array<string>;
+    };
+    check_node_update: {
+        requestArgs: { node_id: number | bigint };
+        response: MatterSoftwareVersion | null;
+    };
+    update_node: {
+        requestArgs: { node_id: number | bigint; software_version: number | string };
+        response: MatterSoftwareVersion | null;
+    };
+    discover_commissionable_nodes: {
+        requestArgs: Record<string, never>;
+        response: CommissionableNodeData[];
+    };
+    get_matter_fabrics: {
+        requestArgs: { node_id: number | bigint };
+        response: MatterFabricData[];
+    };
+    remove_matter_fabric: {
+        requestArgs: { node_id: number | bigint; fabric_index: number };
+        response: Record<string, never>;
+    };
+    set_acl_entry: {
+        requestArgs: { node_id: number | bigint; entry: AccessControlEntry[] };
+        response: AttributeWriteResult[] | null;
+    };
+    set_node_binding: {
+        requestArgs: { node_id: number | bigint; endpoint: number; bindings: BindingTarget[] };
+        response: AttributeWriteResult[] | null;
+    };
+    set_default_fabric_label: {
+        requestArgs: { label: string | null };
+        response: null;
+    };
+    get_loglevel: {
+        requestArgs: Record<string, never>;
+        response: LogLevelResponse;
+    };
+    set_loglevel: {
+        requestArgs: { console_loglevel?: SettableLogLevelString; file_loglevel?: SettableLogLevelString };
+        response: LogLevelResponse;
+    };
+}
+
+/** Utility type to extract request args for a command */
+export type ArgsOf<R extends keyof APICommands> = APICommands[R]["requestArgs"];
+
+/** Utility type to extract response type for a command */
+export type ResponseOf<R extends keyof APICommands> = APICommands[R]["response"];
+
+/**
+ * Log levels the server reports (`get_loglevel`/`set_loglevel` response): the
+ * Python Matter Server names plus `notice`.
+ */
+export type LogLevelString = "critical" | "error" | "warning" | "notice" | "info" | "debug";
+
+/**
+ * Log levels `set_loglevel` accepts as input: the reported names plus the
+ * matter.js aliases `fatal` (= `critical`) and `warn` (= `warning`).
+ */
+export type SettableLogLevelString = LogLevelString | "fatal" | "warn";
+
+/** Response for get_loglevel and set_loglevel commands */
+export interface LogLevelResponse {
+    console_loglevel: LogLevelString;
+    file_loglevel: LogLevelString | null;
+}
+
+/** Access Control Entry for set_acl_entry command */
+export interface AccessControlEntry {
+    privilege: number;
+    auth_mode: number;
+    subjects: Array<number | bigint> | null;
+    targets: AccessControlTarget[] | null;
+}
+
+export interface AccessControlTarget {
+    cluster: number | null;
+    endpoint: number | null;
+    device_type: number | null;
+}
+
+/** Binding target for set_node_binding command */
+export interface BindingTarget {
+    node: number | bigint | null;
+    group: number | null;
+    endpoint: number | null;
+    cluster: number | null;
+}
+
+/** Attribute write result for set_acl_entry and set_node_binding responses */
+export interface AttributeWriteResult {
+    path: { endpoint_id: number; cluster_id: number; attribute_id: number };
+    status: number;
+}
+
+/** Matter node event structure */
+export interface MatterNodeEvent {
+    node_id: number | bigint;
+    endpoint_id: number;
+    cluster_id: number;
+    event_id: number;
+    event_number: number | bigint;
+    priority: number;
+    timestamp: number | bigint;
+    timestamp_type: number;
+    data: unknown | null;
+}
+
+export interface CommandMessage {
+    message_id: string;
+    command: keyof APICommands;
+    args?: APICommands[keyof APICommands]["requestArgs"];
+}
+
+export interface ServerInfoMessage {
+    fabric_id: number | bigint;
+    compressed_fabric_id: number | bigint;
+    /** The fabric index. Note: Only available with OHF Matter Server, not Python Matter Server. */
+    fabric_index?: number;
+    schema_version: number;
+    min_supported_schema_version: number;
+    sdk_version: string;
+    wifi_credentials_set: boolean;
+    wifi_ssid?: string;
+    thread_credentials_set: boolean;
+    bluetooth_enabled: boolean;
+    /** True when BLE proxy mode is enabled (server exposes `/ble` WebSocket endpoint for a remote proxy client). Note: Only available with OHF Matter Server, not Python Matter Server. */
+    ble_proxy_enabled?: boolean;
+    /** The controller's own operational (CASE) node id. Note: Only available with OHF Matter Server, not Python Matter Server. */
+    controller_node_id?: number | bigint;
+}
+
+/** WebSocket event types and their data payloads */
+export interface APIEvents {
+    node_added: {
+        data: MatterNodeData;
+    };
+    node_updated: {
+        data: MatterNodeData;
+    };
+    node_removed: {
+        data: number | bigint;
+    };
+    node_event: {
+        data: MatterNodeEvent;
+    };
+    attribute_updated: {
+        data: [node_id: number | bigint, attribute_path: string, value: unknown];
+    };
+    server_shutdown: {
+        data: Record<string, never>;
+    };
+    endpoint_added: {
+        data: { node_id: number | bigint; endpoint_id: number };
+    };
+    endpoint_removed: {
+        data: { node_id: number | bigint; endpoint_id: number };
+    };
+    server_info_updated: {
+        data: ServerInfoMessage;
+    };
+    webrtc_callback: {
+        data: WebRtcCallbackData;
+    };
+}
+
+/** All known event type names */
+export type EventTypes = keyof APIEvents;
+
+interface ServerEventNodeAdded {
+    event: "node_added";
+    data: MatterNodeData;
+}
+interface ServerEventNodeUpdated {
+    event: "node_updated";
+    data: MatterNodeData;
+}
+interface ServerEventNodeRemoved {
+    event: "node_removed";
+    data: number | bigint;
+}
+interface ServerEventNodeEvent {
+    event: "node_event";
+    data: MatterNodeEvent;
+}
+interface ServerEventAttributeUpdated {
+    event: "attribute_updated";
+    data: [number | bigint, string, unknown];
+}
+interface ServerEventServerShutdown {
+    event: "server_shutdown";
+    data: Record<string, never>;
+}
+interface ServerEventEndpointAdded {
+    event: "endpoint_added";
+    data: { node_id: number | bigint; endpoint_id: number };
+}
+interface ServerEventEndpointRemoved {
+    event: "endpoint_removed";
+    data: { node_id: number | bigint; endpoint_id: number };
+}
+interface ServerEventInfoUpdated {
+    event: "server_info_updated";
+    data: ServerInfoMessage;
+}
+interface ServerEventWebRtcCallback {
+    event: "webrtc_callback";
+    data: WebRtcCallbackData;
+}
+
+export type EventMessage =
+    | ServerEventNodeAdded
+    | ServerEventNodeUpdated
+    | ServerEventNodeRemoved
+    | ServerEventNodeEvent
+    | ServerEventAttributeUpdated
+    | ServerEventServerShutdown
+    | ServerEventEndpointAdded
+    | ServerEventEndpointRemoved
+    | ServerEventInfoUpdated
+    | ServerEventWebRtcCallback;
+
+export interface ResultMessageBase {
+    message_id: string;
+}
+
+export interface ErrorResultMessage extends ResultMessageBase {
+    error_code: number;
+    details?: string;
+}
+
+export interface SuccessResultMessage extends ResultMessageBase {
+    result: unknown;
+}
+
+export interface WebSocketConfig {
+    host: string;
+    port: string;
+    scheme: string;
+    path: string;
+}
+
+export enum UpdateSource {
+    MAIN_NET_DCL = "main-net-dcl",
+    TEST_NET_DCL = "test-net-dcl",
+    LOCAL = "local",
+}
+
+export interface MatterSoftwareVersion {
+    vid: number;
+    pid: number;
+    software_version: number;
+    software_version_string: string;
+    firmware_information?: string;
+    min_applicable_software_version: number;
+    max_applicable_software_version: number;
+    release_notes_url?: string;
+    update_source: UpdateSource;
+}
+
+export interface CommissioningParameters {
+    setup_pin_code: number;
+    setup_manual_code: string;
+    setup_qr_code: string;
+}
+
+export interface CommissionableNodeData {
+    instance_name?: string;
+    host_name?: string;
+    port?: number;
+    long_discriminator?: number;
+    vendor_id?: number;
+    product_id?: number;
+    commissioning_mode?: number;
+    device_type?: number;
+    device_name?: string;
+    pairing_instruction?: string;
+    pairing_hint?: number;
+    mrp_retry_interval_idle?: number;
+    mrp_retry_interval_active?: number;
+    supports_tcp?: boolean;
+    addresses?: string[];
+    rotating_id?: string;
+}
+
+export interface MatterFabricData {
+    fabric_id?: number | bigint;
+    vendor_id?: number;
+    fabric_index?: number;
+    fabric_label?: string;
+    vendor_name?: string;
+}
+
+export type NotificationType = "success" | "info" | "warning" | "error";
+export type NodePingResult = Record<string, boolean>;
+
+/**
+ * Minimum test node ID. Node IDs >= this value are reserved for test nodes.
+ * Uses high 64-bit range (0xFFFF_FFFE_0000_0000) to avoid collision with real node IDs.
+ */
+export const TEST_NODE_START = 0xffff_fffe_0000_0000n;
+
+/**
+ * Check if a node ID is in the test node range (>= TEST_NODE_START).
+ * Test nodes are imported diagnostic dumps, not real commissioned devices.
+ */
+export function isTestNodeId(nodeId: number | bigint): boolean {
+    const bigId = typeof nodeId === "bigint" ? nodeId : BigInt(nodeId);
+    return bigId >= TEST_NODE_START;
+}

@@ -9,38 +9,32 @@ let charts={},activeHub=null,_dockSortAsc=false,_lastDockStats=[],activeFrom='',
 // base   : where the Matter dashboard is served (matter server serves it on :5580)
 // ip     : value the Matter UI logs in with (HA :8123 → converted to :5580/ws)
 // user   : Matter UI username (its login does not validate the password)
-const MATTER_UI={ base:'http://192.168.0.41:5580', ip:'192.168.0.41:8123', user:'dhanush' };
+// The trimmed Matter Node/Thread UI is BUILT into this project and served by the
+// analytics app at /matter (see matter-ui/ source + build-matter.sh). It's loaded
+// same-origin (no iframe mixed-content issues) and connects to the hub's Matter
+// WebSocket for live data via ?ac=1&ip=… (auto-connect, login skipped).
+//   base : same-origin path where the built Matter UI is served
+//   hub  : the hub host (shown in the header; data comes from ws://hub:5580/ws)
+//   ip   : login value the Matter UI converts to the WS URL (HA :8123 → :5580/ws)
+//   user : Matter UI username (its login does not validate the password)
+const MATTER_UI={ base:'/matter', hub:'192.168.0.41', ip:'192.168.0.41:8123', user:'dhanush' };
 function _matterUrl(kind){
   const q='?ac=1&ip='+encodeURIComponent(MATTER_UI.ip)+'&user='+encodeURIComponent(MATTER_UI.user);
-  return MATTER_UI.base.replace(/\/$/,'')+'/'+q+(kind==='thread'?'#thread':'');
+  // Explicit /index.html so it works the same on FastAPI (no dir-index) and Firebase.
+  return MATTER_UI.base.replace(/\/$/,'')+'/index.html'+q+(kind==='thread'?'#thread':'');
 }
-// Render the Node/Thread pane: embed the Matter UI in an iframe when the browser
-// allows it, else fall back to an "open in new tab" card (an HTTPS-served
-// dashboard can't iframe a local HTTP Matter server — mixed-content rule).
+// Render the Node/Thread pane — same-origin iframe of the built Matter UI. Its own
+// header/nav bar hides itself in embedded mode (?ac=1), so no cropping needed.
 function renderMatterEmbed(kind){
   const pane=document.getElementById('tab-'+kind);if(!pane)return;
   const url=_matterUrl(kind);
   const label=kind==='thread'?'Thread Network Mesh':'Nodes / Devices';
-  const canEmbed=!(location.protocol==='https:'&&MATTER_UI.base.startsWith('http:'));
   const head=`<div class="panel" style="padding:0;overflow:hidden">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
-      <div style="font-size:13px;font-weight:600;color:#e8edf5">Matter Server — ${label} <span style="color:var(--muted);font-weight:400;font-size:11px">· ${MATTER_UI.base}</span></div>
+      <div style="font-size:13px;font-weight:600;color:#e8edf5">Matter Server — ${label} <span style="color:var(--muted);font-weight:400;font-size:11px">· live from hub ${MATTER_UI.hub}</span></div>
       <a href="${url}" target="_blank" rel="noopener" class="btn" style="text-decoration:none;white-space:nowrap">Open in new tab ↗</a>
     </div>`;
-  if(canEmbed){
-    // Crop off the Matter UI's own top header/nav bar (~48px) by shifting the
-    // iframe up inside an overflow-hidden wrapper. Works regardless of whether the
-    // embedded build hides its header, so the nav never shows here.
-    const CROP=48;
-    pane.innerHTML=head+`<div style="overflow:hidden;height:78vh">
-      <iframe src="${url}" title="Matter ${label}" style="width:100%;height:calc(78vh + ${CROP}px);border:0;background:#fff;display:block;margin-top:-${CROP}px"></iframe>
-    </div></div>`;
-  }else{
-    pane.innerHTML=head+`<div style="padding:48px 24px;text-align:center">
-      <p style="color:var(--muted);font-size:12px;line-height:1.7;max-width:540px;margin:0 auto 18px">This dashboard is served over HTTPS while the Matter server runs locally over HTTP (${MATTER_UI.base}), so the browser blocks embedding it here. Open it in a new tab — it connects automatically and jumps straight to the ${label}.</p>
-      <a href="${url}" target="_blank" rel="noopener" style="display:inline-block;background:var(--blue);color:#fff;padding:11px 22px;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600">Open Matter ${label} ↗</a>
-    </div></div>`;
-  }
+  pane.innerHTML=head+`<iframe src="${url}" title="Matter ${label}" style="width:100%;height:78vh;border:0;background:#fff;display:block"></iframe></div>`;
 }
 
 const TARGETS={

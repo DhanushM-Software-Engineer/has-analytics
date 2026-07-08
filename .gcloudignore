@@ -18,8 +18,9 @@ deploy.sh
 *.md
 *.gs
 
-# The separate Matter server UI project (~600MB) — NEVER part of the analytics deploy
-schnell-home-automation-matter_server_separate_ui/
+# Matter UI build SOURCE — not served. The built bundle lives in public/matter/
+# (which IS uploaded). Excluding the source keeps the upload tiny.
+matter-ui/
 
 # Python virtualenv, caches, and Node modules
 analytics-api/venv/
