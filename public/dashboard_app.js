@@ -4,6 +4,45 @@
 const D={};
 let charts={},activeHub=null,_dockSortAsc=false,_lastDockStats=[],activeFrom='',activeTo='';
 
+// ── Matter Server UI (Node list + Thread mesh) — hardcoded connection ─────────
+// The Node / Thread tabs embed (or link to) the Matter server's own dashboard.
+// base   : where the Matter dashboard is served (matter server serves it on :5580)
+// ip     : value the Matter UI logs in with (HA :8123 → converted to :5580/ws)
+// user   : Matter UI username (its login does not validate the password)
+const MATTER_UI={ base:'http://192.168.0.41:5580', ip:'192.168.0.41:8123', user:'dhanush' };
+function _matterUrl(kind){
+  const q='?ac=1&ip='+encodeURIComponent(MATTER_UI.ip)+'&user='+encodeURIComponent(MATTER_UI.user);
+  return MATTER_UI.base.replace(/\/$/,'')+'/'+q+(kind==='thread'?'#thread':'');
+}
+// Render the Node/Thread pane: embed the Matter UI in an iframe when the browser
+// allows it, else fall back to an "open in new tab" card (an HTTPS-served
+// dashboard can't iframe a local HTTP Matter server — mixed-content rule).
+function renderMatterEmbed(kind){
+  const pane=document.getElementById('tab-'+kind);if(!pane)return;
+  const url=_matterUrl(kind);
+  const label=kind==='thread'?'Thread Network Mesh':'Nodes / Devices';
+  const canEmbed=!(location.protocol==='https:'&&MATTER_UI.base.startsWith('http:'));
+  const head=`<div class="panel" style="padding:0;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:600;color:#e8edf5">Matter Server — ${label} <span style="color:var(--muted);font-weight:400;font-size:11px">· ${MATTER_UI.base}</span></div>
+      <a href="${url}" target="_blank" rel="noopener" class="btn" style="text-decoration:none;white-space:nowrap">Open in new tab ↗</a>
+    </div>`;
+  if(canEmbed){
+    // Crop off the Matter UI's own top header/nav bar (~48px) by shifting the
+    // iframe up inside an overflow-hidden wrapper. Works regardless of whether the
+    // embedded build hides its header, so the nav never shows here.
+    const CROP=48;
+    pane.innerHTML=head+`<div style="overflow:hidden;height:78vh">
+      <iframe src="${url}" title="Matter ${label}" style="width:100%;height:calc(78vh + ${CROP}px);border:0;background:#fff;display:block;margin-top:-${CROP}px"></iframe>
+    </div></div>`;
+  }else{
+    pane.innerHTML=head+`<div style="padding:48px 24px;text-align:center">
+      <p style="color:var(--muted);font-size:12px;line-height:1.7;max-width:540px;margin:0 auto 18px">This dashboard is served over HTTPS while the Matter server runs locally over HTTP (${MATTER_UI.base}), so the browser blocks embedding it here. Open it in a new tab — it connects automatically and jumps straight to the ${label}.</p>
+      <a href="${url}" target="_blank" rel="noopener" style="display:inline-block;background:var(--blue);color:#fff;padding:11px 22px;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600">Open Matter ${label} ↗</a>
+    </div></div>`;
+  }
+}
+
 const TARGETS={
   reliability: {val:97,   dir:'gte', lbl:'≥97%'},
   northStar:   {val:95,   dir:'gte', lbl:'≥95%'},
@@ -210,6 +249,11 @@ function switchTab(el,id){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tab-pane').forEach(p=>p.style.display='none');
   el.classList.add('active');document.getElementById('tab-'+id).style.display='block';
+  // Node / Thread panes embed the Matter server UI (rendered once, lazily)
+  if((id==='node'||id==='thread')){
+    const pane=document.getElementById('tab-'+id);
+    if(pane&&!pane.dataset.loaded){renderMatterEmbed(id);pane.dataset.loaded='1';}
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

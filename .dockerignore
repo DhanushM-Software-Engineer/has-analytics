@@ -1,8 +1,18 @@
 .git
 .gitignore
+.gcloudignore
 .DS_Store
+**/.DS_Store
+.claude
+.firebase
 *.md
 *.gs
+deploy.sh
+firebase.json
+.firebaserc
 analytics-api/venv
 analytics-api/__pycache__
 **/__pycache__
+**/node_modules
+# The separate Matter server UI project — never part of the analytics image
+schnell-home-automation-matter_server_separate_ui

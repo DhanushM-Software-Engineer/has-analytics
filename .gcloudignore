@@ -1,0 +1,28 @@
+# Controls what `gcloud run deploy --source .` uploads to Cloud Build.
+# Only the analytics API (analytics-api/main.py + requirements.txt), the UI (public/),
+# and the Dockerfile are needed. Everything below is excluded.
+
+.git/
+.gitignore
+.gcloudignore
+.dockerignore
+.claude/
+.firebase/
+.firebaserc
+firebase.json
+deploy.sh
+.DS_Store
+**/.DS_Store
+
+# Docs & scripts — not needed inside the container
+*.md
+*.gs
+
+# The separate Matter server UI project (~600MB) — NEVER part of the analytics deploy
+schnell-home-automation-matter_server_separate_ui/
+
+# Python virtualenv, caches, and Node modules
+analytics-api/venv/
+**/__pycache__/
+**/*.pyc
+**/node_modules/

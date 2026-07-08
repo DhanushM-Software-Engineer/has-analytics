@@ -229,6 +229,8 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div class="tab" onclick="switchTab(this,'speed')">Speed</div>
 <div class="tab" onclick="switchTab(this,'reliability')">Reliability</div>
 <div class="tab" onclick="switchTab(this,'usage')">Usage</div>
+<div class="tab" onclick="switchTab(this,'node')">Node</div>
+<div class="tab" onclick="switchTab(this,'thread')">Thread</div>
 </div>
 <div id="tab-overall" class="tab-pane">
 <div class="grid-2">
@@ -265,6 +267,8 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div class="panel"><h3>Source Breakdown<button class="info-btn" onclick="event.stopPropagation();showInfo('src_chart')">ⓘ</button></h3><div class="chart-box"><canvas id="srcChart"></canvas></div></div>
 <div class="panel" id="dockUsagePanel" style="display:none;margin-top:16px"></div>
 </div>
+<div id="tab-node" class="tab-pane" style="display:none"></div>
+<div id="tab-thread" class="tab-pane" style="display:none"></div>
 </div>
 <!-- LOG CENTER -->
 <div id="logCenterView" style="display:none">

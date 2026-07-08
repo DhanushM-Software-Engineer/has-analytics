@@ -4,3 +4,6 @@ __pycache__/
 
 # Firebase deploy cache (build artifact)
 .firebase/
+
+# Separate Matter server UI project (~600MB) — lives here for local use, not part of the analytics repo
+schnell-home-automation-matter_server_separate_ui/
