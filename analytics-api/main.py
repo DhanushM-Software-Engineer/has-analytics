@@ -207,9 +207,15 @@ def hub_detail(hub_id: str,
                 AND matter_command_ts IS NOT NULL AND snap_state_change_ts IS NOT NULL
                 AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ) WHERE gap > 0""", p)
+        # log_source included so the sample table shows which origin actually
+        # caused this device actuation (app/dock/automation/scene/hub-ui) —
+        # this segment is deliberately origin-agnostic for the *latency* stat
+        # itself (device round-trip time doesn't depend on who triggered it),
+        # but knowing the origin per sample is useful context now that it's
+        # available (Hub Logging Spec).
         f_hs_ev    = ex.submit(q, f"""
             SELECT event_timestamp AS ts, entity_id AS dev, friendly_name,
-                   ha_event_type AS uc, room,
+                   ha_event_type AS uc, room, log_source AS origin,
                    matter_command_ts AS matter_ts, snap_state_change_ts AS snap_ts,
                    TIMESTAMP_DIFF(SAFE_CAST(snap_state_change_ts AS TIMESTAMP),
                                   SAFE_CAST(matter_command_ts  AS TIMESTAMP),
@@ -405,12 +411,23 @@ def hub_detail(hub_id: str,
         # Dock press events (real, from ha_logs) — each press marked success/fail by
         # whether its context_id produced an on/off state. This ONE list feeds both
         # the Log Center and the dock reliability, so they always reconcile.
+        #
+        # dock_id is an entity-hardware mapping (Custom Storage), not an origin
+        # signal — an app-triggered command on a dock-bound device ALSO carries
+        # dock_id, which was inflating dock press counts with app-caused
+        # activity (confirmed 2026-07-09 testing: app commands on
+        # switch.test_product_switch_2/4 both showed dock_id set). Once the Hub
+        # Logging Spec fields exist on a row (is_trigger IS NOT NULL), require
+        # TRUE dock origin (is_trigger AND log_source LIKE 'dock:%') to count it
+        # as a press. Rows from before the spec was added keep the original
+        # dock_id-only heuristic, so historical counts don't shift underfoot.
         f_dock_ev  = ex.submit(q, f"""
             WITH presses AS (
               SELECT event_timestamp AS ts, entity_id AS dev, friendly_name,
                      dock_id, docklet_id, action, room, context_id
               FROM {HL} WHERE hub_id=@hub_id AND dock_id IS NOT NULL AND dock_id!=''
                 AND ha_event_type='call_service'
+                AND (is_trigger IS NULL OR (is_trigger AND log_source LIKE 'dock:%'))
                 AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ),
             outcomes AS (
@@ -429,6 +446,47 @@ def hub_detail(hub_id: str,
         # NOT counted separately (that would double-count the trigger). The SNAP
         # timestamps still feed the Hub → SNAP → Hub *latency* (f_hs), which is timing,
         # not a count.
+
+        # Direct HA-screen control — the ONE previously-uncountable source (see
+        # "Known data gaps" in the architecture doc). Resolved via the Hub Logging
+        # Spec fields (trigger_id / is_trigger / log_source): an is_trigger row
+        # that isn't automation:/scene:/dock:/snap:, AND has no matching
+        # app_logs.trigger_id, can only be a direct HA-UI action. This join is
+        # used instead of comparing HA account ids because this product only ever
+        # has one HA account per hub — the app and the hub's own UI share it, so
+        # account comparison alone can't tell them apart; whether the app itself
+        # logged initiating this exact action can. Only present on events
+        # recorded after these fields were added — older rows have NULL
+        # is_trigger and are correctly excluded, never miscounted. Kept as its
+        # own additive metric for now (not folded into total_activity yet) until
+        # it's been observed across more real-world traffic.
+        f_ha_ui_cnt = ex.submit(q, f"""
+            SELECT COUNT(*) AS cnt
+            FROM {HL} h
+            WHERE h.hub_id=@hub_id AND h.is_trigger
+              AND h.log_source NOT LIKE 'automation:%'
+              AND h.log_source NOT LIKE 'scene:%'
+              AND h.log_source NOT LIKE 'dock:%'
+              AND h.log_source NOT LIKE 'snap:%'
+              AND NOT EXISTS (
+                SELECT 1 FROM {AL} a
+                WHERE a.hub_id=@hub_id AND a.trigger_id=h.trigger_id
+              )
+              AND DATE(h.event_timestamp) BETWEEN @from_date AND @to_date""", p)
+        f_ha_ui_ev  = ex.submit(q, f"""
+            SELECT h.event_timestamp AS ts, h.entity_id AS dev, h.friendly_name, h.room
+            FROM {HL} h
+            WHERE h.hub_id=@hub_id AND h.is_trigger
+              AND h.log_source NOT LIKE 'automation:%'
+              AND h.log_source NOT LIKE 'scene:%'
+              AND h.log_source NOT LIKE 'dock:%'
+              AND h.log_source NOT LIKE 'snap:%'
+              AND NOT EXISTS (
+                SELECT 1 FROM {AL} a
+                WHERE a.hub_id=@hub_id AND a.trigger_id=h.trigger_id
+              )
+              AND DATE(h.event_timestamp) BETWEEN @from_date AND @to_date
+            ORDER BY h.event_timestamp DESC LIMIT 200""", p)
 
     # ── Collect results & post-process (fast, sequential) ────────────────
     kpi = f_kpi.result()[0]
@@ -495,6 +553,13 @@ def hub_detail(hub_id: str,
     hub_obs      = hub_obs_rows[0] if hub_obs_rows else {}
     hub_scene_cnt = int(hub_obs.get("hub_scene", 0) or 0)
     hub_auto_cnt  = int(hub_obs.get("hub_auto",  0) or 0)
+
+    # Direct HA-screen control (Hub Logging Spec) — additive metric, see f_ha_ui_cnt.
+    ha_ui_rows = f_ha_ui_cnt.result()
+    ha_ui_cnt  = int((ha_ui_rows or [{}])[0].get("cnt", 0) or 0)
+    ha_ui_events = f_ha_ui_ev.result()
+    for e in ha_ui_events:
+        e["src"] = "direct_hub_ui"
 
     obs_cnt = int((f_obs_cnt.result() or [{}])[0].get("cnt", 0) or 0)
 
@@ -594,6 +659,10 @@ def hub_detail(hub_id: str,
         "hub_scene_per_day": round(hub_scene_cnt / days_count, 2),
         "hub_auto_total":    hub_auto_cnt,
         "hub_auto_per_day":  round(hub_auto_cnt / days_count, 2),
+        # Direct HA-screen control (Hub Logging Spec) — additive, not yet folded
+        # into total_activity/activity_reliability. See f_ha_ui_cnt.
+        "direct_ha_ui_total":   ha_ui_cnt,
+        "direct_ha_ui_per_day": round(ha_ui_cnt / days_count, 2),
     }
 
     # ── ALL-SOURCE totals — every reliable event, whoever triggered it ──────────
@@ -642,6 +711,7 @@ def hub_detail(hub_id: str,
         "dock_events":    dock_ev,                # ha_logs dock activations
         "all_events":     all_events,             # complete app-triggered list
         "hub_observed_events": hub_obs_events,    # scene/automation from ha_logs
+        "hub_ha_ui_events": ha_ui_events,         # direct HA-UI control (Hub Logging Spec)
         "usage":          usage,
         "devices":        devices,
         "fail_by_reason": fail_by_reason,

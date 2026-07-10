@@ -25,9 +25,10 @@ The app can log an event **only if one of these is true**:
 If neither holds (app closed, or the action happened entirely on the hub /
 hardware), **the app sees nothing → no log.**
 
-> There is **no hub-side logging** in this pipeline yet — only the phone.
-> Everything depends on the app either doing the action or being awake to
-> watch it.
+> The hub has its **own**, independent, always-on telemetry pipeline —
+> see [`HA_TELEMETRY.md`](HA_TELEMETRY.md). This document is about the app's
+> side only: what the app itself can and can't see, which is a narrower
+> problem than "what happened on the hub."
 
 ---
 
@@ -145,6 +146,15 @@ in a JSON `data` column — query with `JSON_VALUE(data, '$.field')`.)
 | `success`, `failure_reason` | outcome — failure codes: `TIMEOUT`, `NO_RESPONSE`, `DEVICE_OFFLINE`, `THREAD_MESH_FAIL` |
 | `trigger_method`, `app_screen`, `riverpod_provider` | UI/source context |
 | `docklet_id`, `dock_id` | set for bind / docklet-bridged events |
+| `trigger_id` | HA's `context.id` — the same value `ha_logs.trigger_id` carries for every row that command produced. Join key between the two tables. Added 2026-07-09 (Hub Logging Spec), source fixed 2026-07-10 — see below and `HA_TELEMETRY.md` §3a |
+
+**Where `trigger_id` actually comes from (fixed 2026-07-10):** originally captured off the REST response to `POST /services/<domain>/<service>` (`callServiceWithContext`). That doesn't work reliably — HA's REST response only lists entities that changed *synchronously* before it returns, and Matter/Thread devices have real physical actuation latency, so the response body is an empty list most of the time (confirmed live: `trigger_id` was `null` on effectively every UC1 row on this fleet). Fixed by reading `context.id` off the **confirming `state_changed` WebSocket event** instead (`AppEventTracker.onStateChanged`) — HA attaches a context to every event on its bus, and this is the exact event whose context becomes the `ha_logs.trigger_id` for the resulting hub-side row anyway, so it's guaranteed to match once it arrives.
+
+This only populates `trigger_id` for commands that wait for a WS confirmation (`expectConfirmation: true` — the normal device-toggle path, `tile_tap`/`slider`). Verified live 2026-07-10: 6/6 app-triggered commands in a clean test batch had an exact `app_logs.trigger_id` ↔ `ha_logs.trigger_id` match. Commands that finalise on the call result alone (`expectConfirmation: false` — scene/automation triggers, docklet binds) still don't get one; the hub still tags those correctly via `automation:`/`scene:` regardless, so this only affects the app↔hub join for that subset, not classification.
+
+Correlating the WS confirmation to the right in-flight command uses a **FIFO queue per entity** (`AppEventTracker._pendingQueueByEntity`, fixed 2026-07-10) rather than a single slot — a single slot meant a second tap on the same entity, before the first tap's confirmation arrived, would silently overwrite the first tap's correlation, orphaning its confirmation (and losing its `trigger_id`) when it did arrive. The one residual edge case: if a single tap causes *more than one* `state_changed` event on the same entity (e.g. a transitional state then a final state), the extra event can be consumed by the *next* queued tap instead of being recognised as "more confirmation for the tap that already finished" — this causes two taps on the same entity, seconds apart, to occasionally share a `trigger_id`. Harmless for counting/classification (both still correctly match *some* `ha_logs` row), only affects precise 1:1 drill-down for rapidly-repeated taps on the same device.
+
+**Known fragility, not yet fixed:** the app's own self-reported HA account id (below) still reads `context.user_id` off the same unreliable REST response, not the WS event. It only needs to succeed once ever (the value is cached both locally and in Custom Storage), and it evidently has on this fleet — but a fresh install could in principle go a while before a REST response happens to come back synchronously. Worth the same WS-sourced fix if it's ever observed not to self-report in practice.
 
 **Timeline by use case:**
 - **UC1** captures the full `tap → command_sent → rest_response →
@@ -152,6 +162,16 @@ in a JSON `data` column — query with `JSON_VALUE(data, '$.field')`.)
 - **UC2 / UC3** finalise on the call result (`tap → rest_response`); there is no
   single clean state echo to wait for, so `ws_confirmation_timestamp` is empty.
 - **OBSERVED** has no latency — there was no command, only a witnessed change.
+
+**Self-reporting the app's own HA account (no config anywhere):** the first
+time the app captures a `context.user_id` off a command response, it writes
+it once (`SharedPreferences`-cached, so only once ever per install) into
+Custom Storage — `AppEventTracker._reportAppIdentityOnce`, category/key
+`app_identity`. The HA Data Catcher add-on's existing 30-second Custom
+Storage poll picks this up automatically. This is how the hub tells "the app
+did this" apart from "someone used the hub's own screen" — see
+`HA_TELEMETRY.md` §3a for why account comparison alone isn't enough on a
+product where the app and the hub UI share one HA account.
 
 ---
 
@@ -209,8 +229,8 @@ SELECT
   JSON_VALUE(data, '$.device_type')                  AS device_type,
   JSON_VALUE(data, '$.friendly_name')                AS friendly_name,
   JSON_VALUE(data, '$.network_type')                 AS network_type,
-  CAST(JSON_VALUE(data, '$.end_to_end_latency_ms') AS INT64) AS latency_ms,
-  CAST(JSON_VALUE(data, '$.success') AS BOOL)        AS success,
+  SAFE_CAST(JSON_VALUE(data, '$.end_to_end_latency_ms') AS INT64) AS latency_ms,
+  SAFE_CAST(JSON_VALUE(data, '$.success') AS BOOL)   AS success,
   JSON_VALUE(data, '$.failure_reason')               AS failure_reason,
   JSON_VALUE(data, '$.trigger_method')               AS trigger_method,
   JSON_VALUE(data, '$.app_screen')                   AS app_screen,
@@ -222,13 +242,23 @@ SELECT
   JSON_VALUE(data, '$.dock_id')                      AS dock_id,
   JSON_VALUE(data, '$.hub_id')                       AS hub_id,
   JSON_VALUE(data, '$.event_id')                     AS event_id,
-  CAST(JSON_VALUE(data, '$.hour') AS INT64)          AS hour,
+  SAFE_CAST(JSON_VALUE(data, '$.hour') AS INT64)     AS hour,
   JSON_VALUE(data, '$.day_of_week')                  AS day_of_week,
-  JSON_VALUE(data, '$.date')                         AS date
+  JSON_VALUE(data, '$.date')                         AS date,
+  JSON_VALUE(data, '$.trigger_id')                   AS trigger_id
 FROM `schnell-home-automation.schnell_analytics.app_logs_raw_latest`
 WHERE data IS NOT NULL;
 ```
 (Swap the `FROM` to `app_logs_raw_changelog` if you want every change incl. dups.)
+
+> Ran and confirmed live 2026-07-09. `trigger_id` is `NULL` on any row written
+> before this view update — expected, not an error.
+>
+> **`hour`, `latency_ms`, `success` use `SAFE_CAST`** (fixed 2026-07-10) — a
+> plain `CAST` throws and kills the entire query if it ever hits one
+> historical row with a malformed value in any of those fields (this
+> happened live on the `ha_logs` view — see `HA_TELEMETRY.md` §6.2 for the
+> confirmed example). `SAFE_CAST` returns `NULL` for that one row instead.
 
 ### 6.3 Handy analytics queries (run against `app_logs`)
 
@@ -299,15 +329,17 @@ with that device's room and floor. Only the **automation/scene entity itself**
 |---|---|
 | Automations/scenes that fire on a **schedule or condition** | They run on the HA hub. The app didn't start them and is usually closed; it can't see the trigger. (At most, their *effects* are caught as `OBSERVED` if the app happens to be open.) |
 | **Anything while the app is closed/backgrounded** | The WebSocket is disconnected — the app is blind. |
-| **Who** caused an observed change | `state_changed` carries no actor; we log the effect only. |
+| **Who** caused a state change the app merely observed | `state_changed` carries no actor from the app's vantage point; the app logs the effect only, as `OBSERVED`. |
 | Direct **Thread/Matter mesh** control (UC4) | Bypasses the app entirely. |
 | Docklet presses when the app is closed | The hub-side Matter binding still toggles the device, but no app is there to log it. |
 
-**To capture these, logging must move to the hub.** The
-`Production_Analytics_Architecture.md` design has the hub stream its own
-`unified_event_log` / `ha_logs` into BigQuery — that is the only way to record
-events that happen while the phone is asleep. It is future work, separate from
-this app-side telemetry.
+**All of this is already solved on the hub side, independently of the app.**
+`HA_TELEMETRY.md` documents the hub's own always-on pipeline (`ha_logs`) —
+it captures every one of these regardless of whether the app is open, and
+(as of 2026-07-09) resolves *who* caused each one via `log_source` /
+`trigger_id` / `is_trigger` (`HA_TELEMETRY.md` §3a). This app-side telemetry
+and the hub-side telemetry are two independent, complete pipelines that join
+on `hub_id` + `trigger_id` — not a partial pipeline waiting on a future one.
 
 ---
 

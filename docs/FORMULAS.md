@@ -10,8 +10,9 @@ All formulas only count events inside the **selected date range** (default: last
 
 > **Scope:** counts and reliability are **all-source** (app + dock + SNAP + scene +
 > automation). Latency/speed is **app-command only** (only app events carry timestamps).
-> App-*observed* changes are never shown (unreliable). Direct HA-screen control isn't
-> counted yet (can't be separated from app commands — pending a hub-side fix).
+> App-*observed* changes are never shown (unreliable). Direct HA-screen control is
+> now countable (see "Direct HA-UI Control" in §4) but tracked as its own additive
+> metric — not yet folded into the all-source totals above.
 
 ## 1. Top KPIs (Overview)
 
@@ -148,6 +149,13 @@ A dock press = a `call_service` tagged with `dock_id`; it **succeeds** if its `c
 produced a device state change to `on`/`off`, else it failed. Computed from **ha_logs**
 (reliable, always-on), *not* from dock_logs. dock_logs is used only for the usage breakdown.
 
+> **`dock_id` alone isn't enough** (fixed 2026-07-09): it's an entity-hardware
+> mapping, not an origin signal — an app command on a dock-bound device also
+> carries `dock_id`. So a press only counts if it *also* has true dock origin
+> (`log_source` starts with `dock:`) — see `HA_TELEMETRY.md` §3a. Rows from
+> before this fix keep the old `dock_id`-only rule, so historical numbers
+> don't move.
+
 ### Per-Source Reliability (table)
 ```
 per source: reliability % = (success ÷ total) × 100
@@ -205,6 +213,20 @@ observes scenes while it is open, so its counts are not used here.
 = count of distinct physical devices with at least one event in the period
 ```
 Only light.*, switch.*, fan.* — scenes/automations/scripts/groups excluded.
+
+### Direct HA-UI Control  🆕 added 2026-07-09
+```
+= count of hub-recorded actions that are not the app, an automation, a scene, or a dock ÷ days
+```
+Someone controlled a device directly from the hub's own Home Assistant screen —
+not through the mobile app. This used to be permanently uncountable (an
+app-relayed command and a hub-screen command looked identical to the hub).
+It's resolved by checking whether the app itself has a matching record of
+starting that exact action (a shared `trigger_id`) — no match, and it isn't
+automation/scene/dock, means the hub's own UI is the only thing left that
+could have done it. See `HA_TELEMETRY.md` §3a for the full reasoning
+(including why comparing HA user accounts alone doesn't work here).
+**Additive metric — not yet folded into Total Events / Reliability.**
 
 ### App Usage Ratio
 ```

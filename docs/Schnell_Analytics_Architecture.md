@@ -30,30 +30,62 @@ The dashboard has **two scopes**, on purpose:
 | Source | What it is | How it's identified | Counted in Total / Reliability? |
 |---|---|---|---|
 | **App commands** | Genuine app-initiated control | `app_logs` `use_case IN ('Local App Control','Device Bind (App)','Remote App Control')` | ✅ Yes. Success = `app_logs.success`. Also the **only** source with latency. |
-| **Dock presses** | Physical dock button → device | `ha_logs` `call_service` where `dock_id` is set | ✅ Yes. Success = the press's `context_id` produced a device `state_changed` reaching `on`/`off`; else fail. |
+| **Dock presses** | Physical dock button → device | `ha_logs` `call_service` where `dock_id` is set **and** true dock origin | ✅ Yes. Success = the press's `context_id` produced a device `state_changed` reaching `on`/`off`; else fail. **`dock_id` alone is not enough** — see the Hub Logging Spec note below. |
 | **Scene activations** | A scene fired | `ha_logs` `call_service` on `scene.*` | ✅ Counted as successful activity (the hub recorded it ran). |
 | **Automation runs** | An automation fired | `ha_logs` `ha_event_type='automation_triggered'` | ✅ Counted as successful activity. |
 | **Observed Change (App)** | Passive state the app noticed | `app_logs` `use_case='Observed Change (App)'` | ❌ **Never shown.** Unreliable (only seen while the app is open). Kept internally as `usage.direct`. |
 | **SNAP-board actuation** | The SNAP hardware physically flipping a device | `ha_logs` `log_source LIKE 'snap:%'` | ❌ **Not counted** — this is the *device-layer* of an action already counted via its trigger (app / dock / automation). Counting it would double-count. The SNAP timestamps still feed the Hub → SNAP → Hub *latency* (timing, not a count). |
-| **Direct HA control** | Someone controls a device from the hub's HA screen | `ha_logs` `log_source LIKE 'ha:%'` on a device | ❌ **Not counted** — the hub logs it with the *same* `log_source`/`context_user_id` as app commands and there is no join key to `app_logs`, so counting it would double-count the app. Needs a hub-side fix (an `app:` source or the app's id stamped into `ha_logs`). |
+| **Direct HA-UI control** | Someone controls a device from the hub's own HA screen | `ha_logs.is_trigger` row that isn't automation:/scene:/dock:/snap:, with **no matching `app_logs.trigger_id`** | ✅ **Countable as of 2026-07-09** — see the Hub Logging Spec note below. Shown as its own "Direct HA-UI Control" metric (usage tab); **not yet folded into Total Events/Reliability** while it's validated against more real-world traffic. |
 
 **All-source reliability** = `(app successes + dock successes + SNAP successes + scenes + automations) ÷ Total Events`.
 `Total Events = app + dock + SNAP + scenes + automations`, and always `Total = Success + Failures`.
+(Direct HA-UI control is tracked separately and not yet part of this sum — see above.)
 
 **dock_logs is used only for the Usage-tab action breakdown** (increment / decrement / toggle). Dock *reliability and counts* come from `ha_logs`. *dock_logs is currently mock; ha_logs is real.* The two are keyed by `dock_id` + `docklet_id`. A dock contains multiple docklets; each docklet's presses are tracked separately and sum to the dock total.
 
+### The Hub Logging Spec (2026-07-09) — true origin, one row per action
+
+`ha_logs` gained four fields that make every source above attributable and
+countable exactly once:
+
+| Field | Meaning |
+|---|---|
+| `log_source` | **True origin** — `app:command` / `ha_ui:command` / `automation:<id>` / `scene:<id>`, or the hardware-layer fallback `dock:<id>` / `snap:<id>` / `ha:<domain>` when origin can't be determined from context alone |
+| `actuation_source` | Which hardware physically carried it out — always populated; `log_source` falls back to this |
+| `trigger_id` | HA's own context id, shared by every row one action produces — the same value `app_logs.trigger_id` carries for that action, so the two tables join per-action |
+| `is_trigger` | `true` on exactly the initiating row per action; `false` on fan-out. **Count `WHERE is_trigger`, not every row**, or fan-out inflates counts |
+
+Full detail (including *why* account comparison alone can't separate app vs
+hub-UI on this product, and how the app's own HA account id is learned
+automatically with zero config) lives in `HA_TELEMETRY.md` §3a — this section
+just covers what it changes for counting:
+
+- **Dock press counts were inflated** before this fix: `dock_id` is an
+  entity-hardware mapping, not an origin signal, so an app command on a
+  dock-bound device also carried `dock_id` and was being counted as a
+  physical press. Fixed in `main.py`'s `f_dock_ev` — new rows require
+  `is_trigger AND log_source LIKE 'dock:%'`; rows from before this fix
+  (`is_trigger IS NULL`) keep the old `dock_id`-only heuristic so historical
+  counts don't shift underfoot.
+- **Direct HA-UI control became countable** — previously a permanent "Known
+  data gap" (see below), now resolved via the join described in the table
+  above.
+
+Rows written before 2026-07-09 have `NULL` for all four fields — this is
+expected, not an error; they simply predate the spec.
+
 ### Count reconciliation (card ↔ drill-down)
 
-The backend returns **complete, unsampled** event lists — `all_events` (app), `dock_events`, `hub_observed_events` (scene/automation). The Log Center, heatmap and Daily chart are all built from these same lists, so every summary-card number equals its drill-down (e.g. a heatmap cell filters the Log Center to that exact **day + hour** and the counts match; the Failures tile equals the Failures-by-Reason sum).
+The backend returns **complete, unsampled** event lists — `all_events` (app), `dock_events`, `hub_observed_events` (scene/automation), `hub_ha_ui_events` (direct HA-UI control). The Log Center, heatmap and Daily chart are all built from these same lists, so every summary-card number equals its drill-down (e.g. a heatmap cell filters the Log Center to that exact **day + hour** and the counts match; the Failures tile equals the Failures-by-Reason sum).
 
 ### Known data gaps (not dashboard bugs)
 
 - **App Control (Remote) = "Not tracked"** — no `Remote App Control` events exist yet.
-- **Direct HA control** — see the table above.
 
 *(Resolved: Hub → SNAP → Hub latency is now live — the hub records distinct
 `matter_command_ts` / `snap_state_change_ts`, so the segment shows the real device
-round-trip. See §5.2.)*
+round-trip. See §5.2. Resolved 2026-07-09: Direct HA control is now countable —
+see the Hub Logging Spec note above.)*
 
 ---
 
@@ -117,26 +149,53 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8080
 
 ```
 Analytics/
+├── README.md                          Project overview & quick start
+├── CLAUDE.md                          Guidance for Claude Code (whole project)
 ├── public/                            Single source of truth for the UI (served locally + by Firebase)
 │   ├── index.html                     Single-page dashboard UI
 │   ├── dashboard_app.js               All rendering logic (vanilla JS + Chart.js)
-│   └── 404.html
+│   ├── 404.html
+│   └── matter/                        BUILT Matter Node/Thread UI bundle (served at /matter)
+├── matter-ui/                         Matter UI build SOURCE (trimmed: dashboard + ws-client + custom-clusters)
+├── build-matter.sh                    Rebuild matter-ui → refresh public/matter/
 ├── deploy.sh                          One-command deploy (Cloud Run + Firebase Hosting)
 ├── firebase.json / .firebaserc        Firebase Hosting config (rewrites /api/** → Cloud Run)
 ├── Dockerfile                         Cloud Run container definition
-├── Schnell_Analytics_Architecture.md  This document
-├── FORMULAS.md                        Formula quick-reference
+├── .gcloudignore / .dockerignore      Keep the deploy lean (exclude matter-ui/ source, venv, node_modules)
 ├── dock_sheet_apps_script.gs          Apps Script for the Google Sheet (auto-sync to BigQuery)
+├── docs/                              Reference documentation
+│   ├── Schnell_Analytics_Architecture.md  This document
+│   ├── FORMULAS.md                    Formula quick-reference
+│   └── APP_TELEMETRY.md / HA_TELEMETRY.md / DOCK_TELEMETRY.md   Raw BigQuery column references
 └── analytics-api/
     ├── main.py                        FastAPI backend — all data from BigQuery
     ├── requirements.txt               Python dependencies
+    ├── run-local.sh                   Start the dashboard locally on :8080
     └── venv/                          Local virtual environment (not committed)
 ```
 
 > **Deploying:** run `./deploy.sh` (backend + UI) or `./deploy.sh --web-only`
 > (UI only — skips the Cloud Run rebuild). The UI has one copy (`public/`), and
 > Firebase serves it with a `no-cache` header, so there is no copy step and no
-> manual cache-busting to remember.
+> manual cache-busting to remember. The built `public/matter/` bundle deploys to both
+> Cloud Run and Firebase; the `matter-ui/` **source** is excluded (it's a build input).
+
+### Node & Thread tabs — embedded Matter UI
+
+The **Node** and **Thread** detail tabs embed the Matter server's own dashboard,
+**trimmed to just those two views** and **served by this app** at `/matter` (built from
+`matter-ui/` into `public/matter/` via `build-matter.sh`). They load
+`/matter/index.html?ac=1&ip=192.168.0.41:8123&user=dhanush` (Thread adds `#thread`):
+`?ac=1` makes the Matter UI auto-connect to the hub's Matter WebSocket
+(`ws://192.168.0.41:5580/ws`) — skipping its login — and hide its own header/nav bar.
+The hardcoded connection lives in `public/dashboard_app.js` (`const MATTER_UI = {...}`).
+The Matter server itself (controller + WebSocket) runs on the **hub**, separate from
+this project.
+
+> **Live (HTTPS) limitation:** the embedded Matter UI connects to the hub over `ws://`
+> (insecure), which browsers block from an HTTPS page. On the live Firebase URL the
+> Matter tabs load but can't fetch live data unless the hub is served over `wss://`.
+> Over local HTTP everything works.
 
 ---
 
@@ -154,14 +213,16 @@ Every user action falls into one of four tracked paths. These map directly to th
 
 > **Dock button presses are not app-initiated.** When a physical dock button is pressed,
 > the state change propagates through HA and the app observes it, logging it as
-> `Observed Change (App)`. The dock hardware's own press counts (total / success /
-> failure) come from the dock sheet (`dock_logs` table), not from app_logs.
+> `Observed Change (App)`. But that app-side observation is **not** what the dashboard
+> uses — dock press counts and reliability come from `ha_logs` (§5.7); `dock_logs` (the
+> Sheet) is usage-breakdown only.
 
 > **Scenes & automations** — the **Scene / Day** and **Automation / Day** tiles are
 > counted from **ha_logs** (hub-recorded — the hub records every activation even when
-> the app is closed, making it the reliable source). App-observed counts are kept only
-> as reference fields (`scene_total`, `scene_per_day`, `observed_per_day`): the app
-> misses events while closed and can log state-restore bursts as false activations.
+> the app is closed, making it the reliable source). The app's own observed
+> scene/automation counts aren't kept anywhere, reference or otherwise — the app
+> misses events while closed and can log state-restore bursts as false activations,
+> so there's nothing worth keeping from that side.
 
 ### Speed Segment Breakdown (Local App Control path)
 
@@ -212,6 +273,7 @@ the app received). Primary table for all app-side KPIs.
 | `command_sent_ts` | STRING (ISO timestamp) | When REST command left the app |
 | `rest_response_ts` | STRING (ISO timestamp) | When hub responded to the REST call |
 | `ws_confirmation_ts` | STRING (ISO timestamp) | When WebSocket state confirmation arrived |
+| `trigger_id` | STRING | HA's context id, captured off the confirming WebSocket `state_changed` event (fixed 2026-07-10 — the REST command response is empty for async Matter/Thread devices, see `APP_TELEMETRY.md`) — joins to `ha_logs.trigger_id` for the same action. Added 2026-07-09 |
 
 > All timestamp columns are stored as **STRING** in BigQuery — queries that do
 > timestamp math must use `SAFE_CAST(... AS TIMESTAMP)` (see Hub→App in §5.2).
@@ -219,7 +281,8 @@ the app received). Primary table for all app-side KPIs.
 ### B. BigQuery — `schnell_analytics.ha_logs`
 
 Every row is one event processed by Home Assistant on the hub. Used for HA processing
-latency, hub-recorded scene/automation counts, and dock-to-hub linking.
+latency, hub-recorded scene/automation counts, dock reliability, and (as of
+2026-07-09) true-origin attribution — see `HA_TELEMETRY.md` §3a for full detail.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -231,8 +294,12 @@ latency, hub-recorded scene/automation counts, and dock-to-hub linking.
 | `ha_processing_latency_ms` | INT64 | HA's internal handling time only (~0–6ms). **Not** used for Hub→SNAP→Hub — that uses the `matter_command_ts`→`snap_state_change_ts` gap instead |
 | `matter_command_ts` | STRING (ISO timestamp) | When HA issued the Matter command — currently identical to snap_state_change_ts (hub-side gap) |
 | `snap_state_change_ts` | STRING (ISO timestamp) | When the SNAP state actually changed |
-| `dock_id` | STRING | Dock ID — links ha_logs rows to the dock sheet |
+| `dock_id` | STRING | Which dock's hardware this entity is mapped to (Custom Storage). **Not an origin signal** — any command on a dock-bound device carries this, including app commands. Use `log_source`/`is_trigger` to know who actually triggered it |
 | `room` | STRING | Physical room |
+| `log_source` | STRING | True origin — `app:command` / `ha_ui:command` / `automation:<id>` / `scene:<id>` / hardware fallback `dock:<id>` / `snap:<id>` / `ha:<domain>`. Added 2026-07-09 |
+| `actuation_source` | STRING | Hardware that carried out the action — `dock:<id>` / `snap:<id>` / `ha:<domain>`. Added 2026-07-09 |
+| `trigger_id` | STRING | HA's own context id, shared by every row one action produces — joins to `app_logs.trigger_id`. Added 2026-07-09 |
+| `is_trigger` | BOOL | `true` on the one initiating row per action; `false` on fan-out. Added 2026-07-09 |
 
 ### C. BigQuery — `schnell_analytics.dock_logs` (the dock sheet)
 
@@ -411,7 +478,7 @@ that time slot. Red intensity scale — darker red = more failures.
 Key format: `"Friday_12"` (same as Activity Heatmap keys).
 Click → Log Center → Failures tab filtered to that hour.
 
-### 5.7 Reliability Detail  *(source: app_logs + dock_logs)*
+### 5.7 Reliability Detail  *(source: app_logs + ha_logs)*
 
 **App Trigger → Feedback**
 - `a_rows` = src_rel rows where use_case contains "App Control"
@@ -419,13 +486,21 @@ Click → Log Center → Failures tab filtered to that hour.
 - Denominator (`at`): `sum(total)` across `a_rows`
 - Formula: `ROUND(100 × as_ / at, 2)`
 
-**Dock Trigger Reliability** — sourced from `dock_logs`
-- Numerator: `sum(success_count)` across all docklets for this hub in the date window
-- Denominator: `sum(total_action_count)` same scope
-- Formula: `ROUND(100 × numerator / denominator, 2)`
+**Dock Trigger Reliability** — sourced from `ha_logs` (**not** `dock_logs` —
+`dock_logs` is usage-breakdown only, see §4.C)
+- A press = `ha_logs` `call_service` row with `dock_id` set and true dock
+  origin (`is_trigger AND log_source LIKE 'dock:%'` once the Hub Logging Spec
+  fields are present on that row; rows from before 2026-07-09 fall back to
+  the plain `dock_id`-set heuristic — see the Hub Logging Spec note in the
+  Data Sourcing Model section)
+- Success = that press's `context_id` produced a `state_changed` reaching
+  `on`/`off`
 - Dashboard renders as: `dockRel = sum(dock_stats[].success) / sum(dock_stats[].total) × 100`
+- This is the **same** press list (`f_dock_ev` / `dock_ev`) the Log Center and
+  Dock Usage Ratio use, so they always reconcile
 
-**Per-Source Reliability** — grouped by `use_case`:
+**Per-Source Reliability** — grouped by `use_case` (app_logs) plus a synthetic
+`Dock Control` row (from the `ha_logs` press list above):
 - `total`, `success`, `fail` = COUNT per group
 - `rel` = `ROUND(100 × success / total, 2)`
 - Display names are remapped in the UI (both here and on the Speed by Use Case cards):
@@ -433,31 +508,31 @@ Click → Log Center → Failures tab filtered to that hour.
   **App Control (Remote)**, `Docklet Press (App)` → **Docklet Press (Observed from App)**.
   Raw values are kept internally so filters and drill-downs keep working.
 
-**Dock Reliability** — sourced entirely from `dock_logs`:
+**Dock Reliability** — sourced from the same `ha_logs` press list as Dock
+Trigger Reliability above:
 - Rows filtered by `hub_id` + date range (same scoping as app_logs / ha_logs)
 - Grouped by `dock_id` — one entry per physical dock
-- `total` = sum of `total_action_count` across all docklets in the dock
-- `success` = sum of `success_count`
-- `failure` = sum of `failure_count`
+- `total`/`success`/`failure` = counted directly from the press list (not
+  summed from `dock_logs` action counts)
 - `rel` = `ROUND(100 × success / total, 2)`
-- `docklets[]` = per-docklet breakdown (same fields) with `actions[]` sub-array per action type
+- `docklets[]` = per-docklet breakdown (same fields), with an `actions[]`
+  sub-array per action type merged in from `dock_logs` (usage detail only —
+  doesn't affect the reliability numbers)
 
-### 5.8 Usage (Source Breakdown)  *(source: app_logs + ha_logs for hub-recorded fields)*
+### 5.8 Usage (Source Breakdown)  *(source: app_logs + ha_logs)*
 
 | Field | Formula |
 |---|---|
-| `app` | `COUNTIF(use_case IN ('Local App Control', 'Device Bind (App)'))` |
-| `docklet` | `COUNTIF(use_case = 'Docklet Press (App)')` |
-| `remote` | `COUNTIF(use_case = 'Remote App Control')` |
-| `direct` | `COUNTIF(use_case = 'Observed Change (App)')` — all observed changes |
-| `scene_count` | `COUNTIF(entity_id LIKE 'scene.%' AND use_case = 'Observed Change (App)')` |
+| `app` | app_logs `COUNTIF(use_case IN ('Local App Control', 'Device Bind (App)'))` |
+| `remote` | app_logs `COUNTIF(use_case = 'Remote App Control')` |
+| `docklet` | **ha_logs** dock press count (the same list §5.7 uses) — *not* app-observed |
+| `direct` | app_logs `COUNTIF(use_case = 'Observed Change (App)')` — internal reference only, never displayed |
 | `app_ratio` | `ROUND(100 × app / (app + docklet), 2)` |
 | `dock_ratio` | `ROUND(100 × docklet / (app + docklet), 2)` |
-| `observed_per_day` | `ROUND(direct / days_count, 2)` — app-observed, reference only |
-| `scene_total` / `scene_per_day` | app-observed scene counts — reference only (app misses events while closed and can log state-restore bursts) |
 | `hub_auto_total` / `hub_auto_per_day` | ha_logs `automation_triggered` count ÷ days — displayed as **Automation / Day** (hub-recorded = reliable source) |
 | `hub_scene_total` / `hub_scene_per_day` | ha_logs scene `call_service` count ÷ days — displayed as **Scene / Day** (hub-recorded = reliable source) |
 | `snap_devices` | `COUNT(DISTINCT entity_id) WHERE domain NOT IN (scene, automation, script, group)` |
+| `direct_ha_ui_total` / `direct_ha_ui_per_day` | Direct HA-UI control count ÷ days (see Hub Logging Spec note above) — displayed as **Direct HA-UI Control**. Added 2026-07-09; additive, not yet folded into `total_activity` |
 
 **SNAP Devices domain filter** — physical devices only:
 `SPLIT(entity_id, '.')[OFFSET(0)] NOT IN ('scene', 'automation', 'script', 'group')`
@@ -527,28 +602,28 @@ ha_logs, and dock_logs — comes from BigQuery; nothing is read from local files
 1. Cache check — return cached result if still within TTL
 2. **Top-level KPIs** (`f_kpi`) — single aggregation on app_logs (zero-event windows return reliability 0, not an error)
 3. **Local E2E speed** (`f_le`, `f_le_ev`) — AVG/P50/P95 on `latency_ms` + 50 sample events
-4. **Hub→SNAP→Hub speed** (`f_hs`, `f_hs_ev`) — `snap_state_change_ts − matter_command_ts` gap (ms) from ha_logs, `gap > 0`
+4. **Hub→SNAP→Hub speed** (`f_hs`, `f_hs_ev`) — `snap_state_change_ts − matter_command_ts` gap (ms) from ha_logs, `gap > 0`; samples also carry `log_source` (true origin) for context, since this segment is origin-agnostic by design
 5. **Per use-case speed** (`f_per_uc`, `f_per_uc_ev`) — grouped by `use_case`; samples = 100 most recent **per use case** (`ROW_NUMBER() OVER (PARTITION BY use_case)`)
-6. **Latency buckets** (`f_bcount`, `f_bk`) — CASE-based bucketing (counts + 500 sample events)
-7. **UC latency buckets** (`f_uc_bkt`) — per-use_case bucket breakdown
-8. **Daily trend** (`f_daily`) — per-date reliability, p50, north star
-9. **Activity heatmap** (`f_heat`) — day_of_week × hour event counts split by source
-10. **Failures heatmap** (`f_heat_fail`) — day_of_week × hour failure counts
-11. **Failures list** (`f_fail`) — last 100 failed events
-12. **Per-source reliability** (`f_src`) — grouped by use_case
-13. **HA event count** (`f_ha_cnt`) — COUNT(*) from ha_logs (informational)
-14. **Failures by reason** (`f_fbr`, `f_fbr_ev`) — grouped + sample events per reason
-15. **Failures by device** (`f_fbd`) — grouped by entity_id + reason (domain-filtered)
-16. **Device activity** (`f_dev`) — top-50 devices with latency (domain-filtered)
-17. **Usage counts** (`f_usage`) — source breakdown including scene_count
-18. **SNAP device count** (`f_snap_count`) — distinct physical device count (domain-filtered)
-19. **Hub→App WS push** (`f_hub_app`) — avg/p50/p95 of `ws_confirmation_ts − rest_response_ts` over the full window (negative diffs excluded)
-20. **Observed Change events** (`f_obs_ev`) — last 200 Observed Change events (no latency filter — these rows have NULL latency and would otherwise never reach the Log Center)
-21. **Hub-recorded observed events** (`f_hub_obs_ev`, `f_hub_obs_cnt`) — scene activations (`call_service` on scene.*) and automation runs (`automation_triggered`) from ha_logs; scene/automation `state_changed` rows are excluded (HA-restart state restores, not real activations)
-22. **Dock rows** (`f_dock`) — dock sheet rows from `dock_logs`, filtered by `hub_id` + date range
+6. **Latency buckets** (`f_uc_bkt`, `f_bcount`, `f_bk`) — CASE-based bucketing, per-use_case + overall (counts + 500 sample events)
+7. **Daily trend** (`f_daily`) — per-date reliability, p50, north star
+8. **Failures list** (`f_fail`) — last 100 failed events
+9. **Per-source reliability** (`f_src`) — grouped by use_case
+10. **HA event count** (`f_ha_cnt`) — COUNT(*) from ha_logs (informational)
+11. **Failures by reason** (`f_fbr`, `f_fbr_ev`) — grouped + sample events per reason
+12. **Failures by device** (`f_fbd`) — grouped by entity_id + reason (domain-filtered)
+13. **Device activity** (`f_dev`) — top-50 devices with latency (domain-filtered)
+14. **Usage counts** (`f_usage`) — app/remote/observed counts from app_logs
+15. **SNAP device count** (`f_snap_count`) — distinct physical device count (domain-filtered)
+16. **Hub→App WS push** (`f_hub_app`) — avg/p50/p95 of `ws_confirmation_ts − rest_response_ts` over the full window (negative diffs excluded)
+17. **Complete app-triggered event list** (`f_all_ev`) — up to 20,000 rows, Log Center source of truth for app commands
+18. **Observed Change count** (`f_obs_cnt`) — internal reference only, never displayed
+19. **Hub-recorded scene/automation** (`f_hub_obs_ev`, `f_hub_obs_cnt`) — scene activations (`call_service` on scene.*) and automation runs (`automation_triggered`) from ha_logs; scene/automation `state_changed` rows are excluded (HA-restart state restores, not real activations)
+20. **Dock usage rows** (`f_dock`) — dock sheet rows from `dock_logs`, filtered by `hub_id` + date range — action-type breakdown only
+21. **Dock press events** (`f_dock_ev`) — the real reliability source, from ha_logs; requires true dock origin (`is_trigger AND log_source LIKE 'dock:%'`) on rows written after 2026-07-09, falls back to the plain `dock_id`-set heuristic on older rows — see the Hub Logging Spec note
+22. **Direct HA-UI control** (`f_ha_ui_cnt`, `f_ha_ui_ev`) — added 2026-07-09; an `is_trigger` row that isn't automation:/scene:/dock:/snap:, with no matching `app_logs.trigger_id`, resolved as direct hub-UI control
 23. Cache store — result saved to `_HUB_CACHE` with current timestamp
 
-All steps 2–22 fire in parallel. Results are collected sequentially after all futures complete.
+All steps 2–22 fire in parallel via `ThreadPoolExecutor`. Results are collected sequentially after all futures complete. (Heatmaps are **not** a backend query — built client-side from the event pool so cell counts always equal their drill-downs.)
 
 ---
 
@@ -620,11 +695,11 @@ Vanilla JavaScript application. No framework dependencies beyond Chart.js.
 | Latency Distribution | Speed | Bar chart | app_logs buckets |
 | Speed by Use Case | Speed | Cards with Avg/P50/P95/StdDev | app_logs per use_case |
 | Source Breakdown | Usage | Doughnut chart | app_logs use_case counts |
-| Usage KPIs | Usage | KPI tiles | Automation/Day + Scene/Day from **ha_logs** (hub-recorded); Active Devices, App Ratio, Dock Ratio from app_logs |
-| Dock Usage | Usage | KPI tiles + table | dock_logs |
-| Per-Source Reliability | Reliability | Table (display names remapped) | app_logs per use_case |
+| Usage KPIs | Usage | KPI tiles | Automation/Day + Scene/Day + Direct HA-UI Control from **ha_logs** (hub-recorded); Active Devices, App/Dock Ratio from app_logs + ha_logs |
+| Dock Usage | Usage | KPI tiles + table | dock_logs (action-type breakdown only — see §5.7 for why reliability isn't here) |
+| Per-Source Reliability | Reliability | Table (display names remapped) | app_logs per use_case + ha_logs Dock Control |
 | Reliability Trend | Reliability | Line chart | app_logs daily |
-| Dock Reliability | Reliability | Sortable table | dock_logs |
+| Dock Reliability | Reliability | Sortable table | **ha_logs** (not dock_logs — see §5.7) |
 | Failures by Reason | Reliability | Table | app_logs failures |
 | Failures by Device | Reliability | Pivoted table (one col per reason) | app_logs failures |
 | Device Activity | Reliability | Table | app_logs per entity_id |
@@ -713,16 +788,21 @@ Vanilla JavaScript application. No framework dependencies beyond Chart.js.
   "all_events":    [ /* COMPLETE app-triggered list — Log Center source of truth */ ],
   "dock_events":   [{ "ts": "...", "dev": "switch....", "dock_id": "...", "docklet_id": "...",
                       "action": "light.turn_on", "success": true }],
+                   // ha_logs presses — true dock origin required on rows after 2026-07-09
   "hub_observed_events": [{ "ts": "...", "dev": "automation.mathi", "uc": "Automation Run (Hub)" }],
+  "hub_ha_ui_events": [{ "ts": "...", "dev": "switch.test_product_switch_4", "friendly_name": "...",
+                         "room": "Balcony" }],
+                   // added 2026-07-09 — direct HA-UI control, see Hub Logging Spec note
   "dock_usage":    { "total": 134, "by_action": { "toggle": 72, "increment": 34, "decrement": 28 },
                      "by_docklet": {}, "daily": [] },   // from dock_logs — usage breakdown only
   "usage": {
     "app": 1717, "remote": 0,
-    "docklet": 384,            // dock presses (ha_logs)
+    "docklet": 384,            // dock presses (ha_logs, true dock origin)
     "direct": 91,              // Observed Change (App) — INTERNAL only, never displayed
     "app_ratio": 81.7, "dock_ratio": 18.3, "snap_devices": 12,
     "hub_scene_total": 8, "hub_scene_per_day": 0.26,
-    "hub_auto_total": 8,  "hub_auto_per_day": 0.26
+    "hub_auto_total": 8,  "hub_auto_per_day": 0.26,
+    "direct_ha_ui_total": 6, "direct_ha_ui_per_day": 0.19  // added 2026-07-09
   },
   "devices": [{ "id": "switch....", "room": "lab", "total": 364, "success": 362, "rel": 99.45, "p50": 520 }],
   "fail_by_reason": { "NO_RESPONSE": { "count": 9, "events": [...] },
@@ -733,6 +813,12 @@ Vanilla JavaScript application. No framework dependencies beyond Chart.js.
 Removed vs older versions: `observed_events`, `heatmap`/`heatmap_detail`/`heatmap_fail`
 (the frontend now builds heatmaps from the event pool), and the app-observed
 `scene_total`/`scene_per_day`/`observed_per_day` usage fields.
+
+Added 2026-07-09 (Hub Logging Spec): `ha_logs` rows (and `hub_snap_hub` speed
+samples) now also carry `log_source` (true origin), `actuation_source`
+(hardware layer), `trigger_id` (join key to `app_logs.trigger_id`), and
+`is_trigger` (one row per action) — not shown in this app_logs-shaped example
+since they live on `ha_logs`; see `HA_TELEMETRY.md` §3a for the full schema.
 
 ---
 

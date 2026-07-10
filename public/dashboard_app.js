@@ -319,6 +319,12 @@ function buildEventPool(hub){
     dev:e.dev||'—',room:e.room||'—',src:'direct_hub',lat:null,
     reason:null,net:'hub',dock:'—',status:'ok',segType:'hub_observed',hasTiming:false}));
 
+  // Direct HA-UI control (Hub Logging Spec) — additive new metric, not yet
+  // folded into total_activity. See docs on f_ha_ui_cnt in main.py.
+  (d.hub_ha_ui_events||[]).forEach(e=>events.push({hub,ts:e.ts,uc:'Direct HA-UI Control',
+    dev:e.dev||'—',room:e.room||'—',src:'direct_hub_ui',lat:null,
+    reason:null,net:'hub',dock:'—',status:'ok',segType:'hub_ha_ui',hasTiming:false}));
+
   return events.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
 }
 // Source classification for Log Center count breakdown
@@ -1008,8 +1014,8 @@ function renderSpeed(d){
   const maxBar=Math.max(s.hub_snap_hub.p50||1,s.hub_app.p50||1,48,s.local_e2e.p50||1);
 
   const segs=[
-    {key:'hub_snap_hub',name:'Hub → SNAP → Hub',desc:'App triggers hub → hub issues Matter cmd over Thread mesh → SNAP device activates → state reflected back to hub',val:s.hub_snap_hub,color:'var(--green)',target:TARGETS.hubSnap,
-     cols:[{key:'ts',label:'Event Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'matter_ts',label:'Matter CMD Sent'},{key:'snap_ts',label:'State Reflected'},{key:'lat',label:'Total (ms)'},{key:'room',label:'Room'}]},
+    {key:'hub_snap_hub',name:'Hub → SNAP → Hub',desc:'Hub issues Matter cmd over Thread mesh → SNAP device activates → state reflected back to hub. This is the device round-trip itself, so it happens the same way no matter who/what triggered it (app, dock, automation, scene, or the hub\'s own UI) — see the Origin column on each sample.',val:s.hub_snap_hub,color:'var(--green)',target:TARGETS.hubSnap,
+     cols:[{key:'ts',label:'Event Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'origin',label:'Origin'},{key:'matter_ts',label:'Matter CMD Sent'},{key:'snap_ts',label:'State Reflected'},{key:'lat',label:'Total (ms)'},{key:'room',label:'Room'}]},
     {key:'hub_app',name:'Hub → App (WebSocket Push)',desc:'Device state confirmed at hub (snap_ts) → hub immediately pushes via WebSocket → app reflects new state. P50: '+s.hub_app.p50+'ms',val:s.hub_app,color:'var(--blue)',target:TARGETS.hubApp,
      derivedEvents:hubAppEvents,
      cols:[{key:'ts',label:'Event Time'},{key:'hub_dispatched',label:'State Confirmed at Hub'},{key:'app_confirmed',label:'App Received (ws_conf)'},{key:'lat',label:'Push (ms)'},{key:'dev',label:'Device'},{key:'room',label:'Room'}]},
@@ -1511,7 +1517,8 @@ function renderUsage(d){
     <div class="kpi" onclick="showUsageModal('scene')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Scene / Day<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_scene')">ⓘ</button></div><div class="value">${u.hub_scene_per_day||0}</div><div class="formula-ref">= ${u.hub_scene_total||0} hub-recorded ÷ ${activeDaysCount()} days</div><div class="sub">Click for breakdown</div></div>
     <div class="kpi" onclick="showUsageModal('devices')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Active SNAP Devices<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_snap_devices')">ⓘ</button></div><div class="value">${u.snap_devices||0}</div><div class="formula-ref">Physical devices active this period</div><div class="sub">Click for device list</div></div>
     <div class="kpi" onclick="showUsageModal('app')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">App Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_app')">ⓘ</button></div><div class="value">${u.app_ratio||0}%</div><div class="formula-ref">= ${u.app||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="showUsageModal('dock')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Dock Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_dock')">ⓘ</button></div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>`;
+    <div class="kpi" onclick="showUsageModal('dock')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Dock Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_dock')">ⓘ</button></div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
+    <div class="kpi" onclick="showUsageModal('ha_ui')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Direct HA-UI Control<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_ha_ui')">ⓘ</button></div><div class="value">${u.direct_ha_ui_total||0}</div><div class="formula-ref">= ${u.direct_ha_ui_per_day||0}/day · new metric</div><div class="sub">Click for breakdown</div></div>`;
   const hubSA=((u.hub_scene_total||0)+(u.hub_auto_total||0));
   const srcLabels=['App (Local)','Remote App','Dock Control','Hub (Scene/Auto)'];
   charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,hubSA],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f'],borderWidth:0}]},
@@ -1604,10 +1611,14 @@ window.showUsageModal=function(type){
     title='App Usage Ratio';
     lcOpts={hub,tab:'all',srcFilter:'App Control',context:{label:'App (Local) Events',desc:`${hub.toUpperCase()} · ${app} local app events · ${activePeriodLabel()}`}};
     body=`<table style="font-size:12px">${row('Formula','App ÷ (App + Dock)')}${row('App Events',`<strong style="font-size:16px;color:var(--blue)">${app}</strong>`)}${row('Dock Events',docklet)}${row('Ratio',`<strong style="font-size:16px;color:var(--blue)">${app_ratio}%</strong>`)}</table>`;
-  } else {
+  } else if(type==='dock'){
     title='Dock Usage Ratio';
     lcOpts={hub,tab:'all',srcFilter:'Dock Control',context:{label:'Dock Control Events',desc:`${hub.toUpperCase()} · ${docklet} dock events · ${activePeriodLabel()}`}};
     body=`<table style="font-size:12px">${row('Formula','Dock ÷ (App + Dock)')}${row('Dock Events',`<strong style="font-size:16px;color:var(--green)">${docklet}</strong>`)}${row('App Events',app)}${row('Ratio',`<strong style="font-size:16px;color:var(--green)">${dock_ratio}%</strong>`)}</table>`;
+  } else {
+    title='Direct HA-UI Control';
+    lcOpts={hub,tab:'all',ucFilter:'Direct HA-UI Control',context:{label:'Direct HA-UI Control Events',desc:`${hub.toUpperCase()} · ${u.direct_ha_ui_total||0} actions taken directly from the hub's own Home Assistant screen`}};
+    body=`<table style="font-size:12px">${row('Formula','Hub-recorded actions that are not the app, an automation, a scene, or a dock — resolved via trigger_id/is_trigger/log_source')}${row('Count (tile value)',`<strong style="font-size:16px">${u.direct_ha_ui_total||0}</strong>`)}${row('Per Day',`<strong>${u.direct_ha_ui_per_day||0}</strong>`)}${row('New metric',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">Previously impossible to count — app-relayed and hub-screen commands looked identical to the hub. Not yet folded into Total Events / Reliability while this is validated against more real-world traffic.</span>`)}</table>`;
   }
   body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${title} in Log Center →</button></div>`;
   showModal(title,body);
@@ -1737,6 +1748,7 @@ window.showInfo=function(key){
     usage_snap_devices:{title:'Active SNAP Devices',body:'The count of distinct physical SNAP-connected devices that had at least one command in this period.\n\nOnly counts real physical hardware:\n• light.* — SNAP-connected lights\n• switch.* — SNAP-connected switches\n• fan.* — SNAP-connected fans\n\nExcludes virtual entities like scene.*, automation.*, script.*, and group.* which are logical constructs, not physical devices.'},
     usage_app:{title:'App Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from someone tapping the phone app? A high app ratio means users prefer the app over physical dock buttons.\n\nUseful for understanding how the system is actually being used day-to-day and whether dock hardware is being adopted.'},
     usage_dock:{title:'Dock Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from pressing a physical dock button? A high dock ratio means users find the physical interface more natural or convenient than the app.'},
+    usage_ha_ui:{title:'Direct HA-UI Control',body:'Commands sent directly from the hub\'s own Home Assistant screen — not the mobile app, not a dock, not an automation, not a scene.\n\nThis used to be impossible to count: an app-relayed command and a hub-screen command looked identical to the hub. It\'s resolved now by checking whether the app itself has a matching record of starting that exact action (via a shared trigger id) — if it doesn\'t, and it isn\'t an automation, scene, or dock press, the hub\'s own UI is the only thing left that could have done it.\n\nThis is a new metric — it only counts events recorded after this capability was added, and it isn\'t folded into Total Events or Reliability yet while it\'s validated against more real-world usage.'},
     src_chart:{title:'Source Breakdown',body:'A visual split of all events by how they were triggered:\n\n• App (Local): User tapped the phone app on the same Wi-Fi\n• Remote App: User tapped the app from outside the home\n• Dock Control: Physical dock button was pressed\n• Observed Change: State change detected automatically (e.g. manual switch, scene activation)\n\nClick any segment to see those specific events in the Log Center.'},
     dock_usage:{title:'Dock Usage',body:'The action-type usage breakdown from dock_logs — how the docks are being used:\n\n• Total Dock Actions: All docklet actions recorded in dock_logs this period\n• Active Docklets: How many individual button assignments were used\n• Action table: counts per action type (toggle / increment / decrement)\n\nThis panel is usage only. Dock reliability (did the press succeed?) is on the Reliability tab and comes from ha_logs (the reliable, always-on source).'},
     dev_activity:{title:'Device Activity',body:'A ranked list of every device (light or switch) controlled through this hub, sorted by most-used first. Shows:\n\n• Device: The entity ID (short name) of the device\n• Room: Which room it\'s in\n• Events: Total commands sent to this device in the selected period\n• Reliability: What percentage of commands on this device succeeded\n• P50: The median response time for this specific device\n\nClick any row to see the full stats for that device including its failure events.'},

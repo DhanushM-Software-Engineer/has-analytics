@@ -21,12 +21,24 @@ each docklet was pressed, how many presses succeeded, how many failed.
 This is different from the other two pipelines:
 
 - **app_logs** sees a dock press only if the app is open to observe the result
-- **ha_logs** sees the state change the press caused, but not the press itself
-- **dock_logs** is the dock's own ground truth: every press, counted at the
-  hardware, whether or not anything else was watching
+- **ha_logs** sees the press itself (a `call_service` tagged with `dock_id`)
+  *and* the state change it caused — reliably, 24/7, whether or not the app
+  is open. **This is the actual source of dock reliability and press counts
+  on the dashboard** — see §5, and don't be misled by the table name below.
+- **dock_logs** is the dock hardware's own internal counters, entered into a
+  Google Sheet — used **only** for the action-type usage breakdown
+  (toggle/increment/decrement mix), not for reliability or counts
 
-Each row is **one docklet × one action type × one date** with aggregate counts —
-not one row per press.
+Each `dock_logs` row is **one docklet × one action type × one date** with
+aggregate counts — not one row per press.
+
+> **Caveat (added 2026-07-09):** `dock_id`/`docklet_id` on an `ha_logs` row is
+> an entity-hardware mapping from Custom Storage, not an origin signal — *any*
+> command on a dock-bound device carries `dock_id`, including one sent from
+> the app. The dashboard's dock-press counting requires true dock origin
+> (`log_source LIKE 'dock:%'` + `is_trigger`) to avoid counting app-triggered
+> commands on dock-bound devices as physical presses — see `HA_TELEMETRY.md`
+> §3a and `Schnell_Analytics_Architecture.md` §5.7.
 
 ---
 
@@ -152,19 +164,27 @@ GROUP BY d.hub_id;
 
 ---
 
-## 5. How the dashboard uses dock_logs
+## 5. How the dashboard uses dock_logs — and what it actually uses ha_logs for
 
-| Dashboard panel | What it reads |
+This is the part most likely to surprise you: **dock reliability and press
+counts do not come from `dock_logs`.** They come from `ha_logs` — a dock
+press is a `call_service` row with `dock_id` set, and it succeeds if that
+press's `context_id` produced a device `state_changed` reaching `on`/`off`.
+`dock_logs` (the Sheet) is usage-breakdown only.
+
+| Dashboard panel | What it actually reads |
 |---|---|
-| Dock Trigger Reliability (Reliability tab) | `SUM(success_count) ÷ SUM(total_action_count)` per hub + window |
-| Dock Reliability table | per-dock and per-docklet success/failure breakdown |
-| Dock Usage panel (Usage tab) | totals by action and by docklet, daily reliability |
-| Dock Usage Ratio | uses `app_logs` Docklet-Press counts, **not** dock_logs |
+| Dock Trigger Reliability (Reliability tab) | `ha_logs` — dock press rows (true dock origin + outcome), **not** `dock_logs` |
+| Dock Reliability table | `ha_logs` — same press list, grouped by `dock_id`/`docklet_id` |
+| Dock Usage panel (Usage tab) | `dock_logs` — totals by action type (toggle/increment/decrement) and by docklet |
+| Dock Usage Ratio | `ha_logs` dock press count vs `app_logs` app command count |
 
-The backend (`Analytics/analytics-api/main.py`) queries `dock_logs` with
-`WHERE hub_id = @hub_id AND DATE(date) BETWEEN @from_date AND @to_date` —
-the same scoping as app_logs and ha_logs, so date-range selection on the
-dashboard filters dock data too.
+The backend (`Analytics/analytics-api/main.py`, `f_dock_ev`) queries
+`ha_logs` for presses (`WHERE dock_id IS NOT NULL AND ha_event_type=
+'call_service'`, requiring true dock origin once the Hub Logging Spec fields
+are present — see the caveat in §1) and separately queries `dock_logs`
+(`f_dock`) purely for the action-type breakdown, both scoped by
+`hub_id` + the selected date range.
 
 ---
 
