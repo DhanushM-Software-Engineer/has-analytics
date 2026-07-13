@@ -49,16 +49,17 @@ const TARGETS={
   appTrigger:  {val:97,   dir:'gte', lbl:'≥97%'},
 };
 function tgtLine(actual,t){
-  const met=t.dir==='gte'?actual>=t.val:actual<=t.val;
-  return `<span style="font-size:9px;color:${met?'var(--green)':'var(--red)'}">Target ${t.lbl}</span>`;
+  return `<span style="font-size:9px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:3px 8px;font-weight:500;white-space:nowrap;">Target ${t.lbl}</span>`;
 }
 function _defaultDates(){const now=new Date(),pad=n=>String(n).padStart(2,'0'),fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;activeTo=fmt(now);const f=new Date(now);f.setDate(f.getDate()-30);activeFrom=fmt(f);}
 function activeDaysCount(){if(!activeFrom||!activeTo)return 30;return Math.round((new Date(activeTo)-new Date(activeFrom))/864e5)+1;}
 function activePeriodLabel(){if(!activeFrom||!activeTo)return'30-day window';const fmt=s=>{const[y,m,d]=s.split('-');return`${m}/${d}/${y.slice(2)}`};return`${fmt(activeFrom)}–${fmt(activeTo)}`;}
 async function fetchAllHubs(showLoading){
-  if(showLoading){const s=document.getElementById('drStatus');if(s){s.textContent='Loading…';s.style.color='var(--blue)';}}
+  const loader=document.getElementById('fullPageLoader');
+  if(showLoading&&loader) loader.style.display='flex';
   const{hubs}=await fetch('/api/hubs').then(r=>r.json());
   await Promise.all(hubs.map(async h=>{D[h]=await fetch(`/api/hub/${h}?from_date=${activeFrom}&to_date=${activeTo}`).then(r=>r.json())}));
+  if(showLoading&&loader) loader.style.display='none';
   const s=document.getElementById('drStatus');if(s){s.textContent='';s.style.color='';}
   const lbl=document.getElementById('headerPeriodLabel');if(lbl)lbl.textContent=activePeriodLabel();
   document.getElementById('hubCount').textContent=Object.keys(D).length;
@@ -165,14 +166,27 @@ function renderLanding(){
   else if(anyWarning){badge.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:var(--yellow);display:inline-block"></span><span style="color:var(--yellow)">Warning</span>';badge.style.borderColor='var(--yellow)'}
   else{badge.innerHTML='<span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;animation:pulse 2s infinite"></span><span style="color:var(--green)">All Systems Operational</span>';badge.style.borderColor='var(--green)'}
 
+  const INFO_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin-left:2px;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+  const titleStyle = "display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;color:#e8edf5;";
+
   document.getElementById('fleetKPIs').innerHTML=`
-    <div class="kpi"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Total Fleet Events<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_total')">ⓘ</button></div><div class="value">${fActivity.toLocaleString()}</div><div class="sub">${hubs.length} hubs · app + dock + hub · ${activePeriodLabel()}</div></div>
-    <div class="kpi" onclick="showFleetModal('reliability')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Fleet Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_reliability')">ⓘ</button></div><div class="value" style="color:${fActivity?relColor(fRel):'var(--muted)'}">${fActivity?fRel+'%':'—'}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">${fActivity?fActSucc.toLocaleString()+' success · '+fActFail+' failures':'no activity'}</span>${fActivity?tgtLine(parseFloat(fRel),TARGETS.reliability):''}</div></div>
-    <div class="kpi" onclick="showFleetModal('latency')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Avg P50 Latency<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_latency')">ⓘ</button></div><div class="value">${fP50}ms</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Median end-to-end response</span>${tgtLine(fP50,TARGETS.p50Local)}</div></div>
-    <div class="kpi" onclick="showFleetModal('northstar')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">North Star (Sub-1s)<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_northstar')">ⓘ</button></div><div class="value" style="color:${fNSavg>=95?'var(--green)':fNSavg>=80?'var(--yellow)':'var(--red)'}">${fNSavg}%</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Fleet avg under-1-second rate</span>${tgtLine(parseFloat(fNSavg),TARGETS.northStar)}</div></div>`;
+    <div class="kpi"><div class="label" style="${titleStyle}">TOTAL EVENTS<button class="info-btn" style="border:none;background:none" onclick="event.stopPropagation();showInfo('fleet_total')">${INFO_ICON}</button></div><div class="value">${fActivity.toLocaleString()}</div><div class="sub">${hubs.length} Hubs</div></div>
+    <div class="kpi" onclick="showFleetModal('reliability')"><div class="label" style="${titleStyle}">RELIABILITY<button class="info-btn" style="border:none;background:none" onclick="event.stopPropagation();showInfo('fleet_reliability')">${INFO_ICON}</button></div><div class="value" style="color:${fActivity?relColor(fRel):'var(--muted)'}">${fActivity?fRel+'%':'—'}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">${fActivity?fActSucc.toLocaleString()+' Success, '+fActFail.toLocaleString()+' Failures':'no activity'}</span>${fActivity?tgtLine(parseFloat(fRel),TARGETS.reliability):''}</div></div>
+    <div class="kpi" onclick="showFleetModal('latency')"><div class="label" style="${titleStyle}">AVG P50 SPEED<button class="info-btn" style="border:none;background:none" onclick="event.stopPropagation();showInfo('fleet_latency')">${INFO_ICON}</button></div><div class="value">${fP50}ms</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Median Response Time</span>${tgtLine(fP50,TARGETS.p50Local)}</div></div>
+    <div class="kpi" onclick="showFleetModal('northstar')"><div class="label" style="${titleStyle}">NORTH STAR<button class="info-btn" style="border:none;background:none" onclick="event.stopPropagation();showInfo('fleet_northstar')">${INFO_ICON}</button></div><div class="value" style="color:${fNSavg>=95?'var(--green)':fNSavg>=80?'var(--yellow)':'var(--red)'}">${fNSavg}%</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Actions completed in &lt; 1 second</span>${tgtLine(parseFloat(fNSavg),TARGETS.northStar)}</div></div>`;
 
   const grid=document.getElementById('hubCardsGrid');grid.innerHTML='';
-  hubs.forEach(h=>{
+  const getScore = h => {
+    const d=D[h];
+    if(!d) return 4;
+    const act=d.total_activity!=null?d.total_activity:d.total;
+    if(!act||act<=0) return 4;
+    const rel=d.activity_reliability!=null?d.activity_reliability:d.reliability;
+    if(rel<95||(d.total&&d.speed&&d.speed.local_e2e.p50>1000)) return 1;
+    if(rel<97||(d.total&&d.speed&&d.speed.local_e2e.p50>800)) return 2;
+    return 3;
+  };
+  [...hubs].sort((a,b)=>getScore(a)-getScore(b)).forEach(h=>{
     const d=D[h];
     const activity=d.total_activity!=null?d.total_activity:d.total;
     const arel=d.activity_reliability!=null?d.activity_reliability:d.reliability;
@@ -182,34 +196,44 @@ function renderLanding(){
     const sl=hasAct?statusLabel(arel):'No activity';
     const hasIssues=hasAct&&(arel<97||(d.total&&d.speed.local_e2e.p50>800));
     const failCount=d.activity_fail!=null?d.activity_fail:(d.total-d.success);
+    const nsNS = d.daily&&d.daily.length ? (d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1)+'%' : '—';
     const card=document.createElement('div');
     card.className='hub-grid-card';card.dataset.hub=h;
     card.innerHTML=`
-      <div class="hgc-header">
-        <div class="hgc-name"><span class="hgc-dot" style="background:${rc}"></span>${h.toUpperCase()}</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          ${hasIssues?`<button class="investigate-btn" onclick="event.stopPropagation();openLogCenter({hub:'${h}',tab:'failures',context:{label:'Investigating ${h.toUpperCase()}',desc:'All failure events for this hub'}})">Investigate →</button>`:''}
-          <span class="tag ${tag}">${sl}</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:16px;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:700;color:#e8edf5;font-family:monospace;letter-spacing:0.5px">${h.toUpperCase()}</div>
+        <div style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid ${rc};border-radius:20px;padding:4px 12px;font-size:11px;font-weight:500"><span style="width:8px;height:8px;border-radius:50%;background:${rc};display:inline-block"></span><span style="color:${rc}">${sl}</span></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:30px;gap:4px">
+        <div style="flex:1;text-align:center">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0;white-space:nowrap;margin-bottom:8px">TOTAL EVENTS</div>
+          <div style="font-size:15px;color:#e8edf5;font-weight:700">${activity.toLocaleString()}</div>
+        </div>
+        <div style="width:1px;height:44px;background:var(--border2)"></div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0;white-space:nowrap;margin-bottom:8px">RELIABILITY</div>
+          <div style="font-size:15px;color:${rc};font-weight:700">${hasAct?arel+'%':'—'}</div>
+        </div>
+        <div style="width:1px;height:44px;background:var(--border2)"></div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0;white-space:nowrap;margin-bottom:8px">P50 SPEED</div>
+          <div style="font-size:15px;color:#e8edf5;font-weight:700">${d.total&&d.speed.local_e2e.p50!=null?d.speed.local_e2e.p50+'ms':'—'}</div>
+        </div>
+        <div style="width:1px;height:44px;background:var(--border2)"></div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0;white-space:nowrap;margin-bottom:8px">NORTH STAR</div>
+          <div style="font-size:15px;color:#e8edf5;font-weight:700">${nsNS}</div>
+        </div>
+        <div style="width:1px;height:44px;background:var(--border2)"></div>
+        <div style="flex:1;text-align:center">
+          <div style="font-size:10px;color:var(--muted);font-weight:700;letter-spacing:0;white-space:nowrap;margin-bottom:8px">FAILURES</div>
+          <div style="font-size:15px;color:#e8edf5;font-weight:700">${hasAct?failCount:'—'}</div>
         </div>
       </div>
-      <div class="hgc-metrics">
-        <div class="hgc-metric">
-          <div class="hgc-m-label">Reliability</div>
-          <div class="hgc-m-value" style="color:${rc}">${hasAct?arel+'%':'—'}</div>
-          <div style="display:flex;justify-content:space-between;gap:4px;margin-top:3px"><span class="hgc-m-sub">${hasAct?failCount+' fail':'no activity'}</span>${hasAct?tgtLine(arel,TARGETS.reliability):''}</div>
-        </div>
-        <div class="hgc-metric">
-          <div class="hgc-m-label">P50 Latency</div>
-          <div class="hgc-m-value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.total&&d.speed.local_e2e.p50!=null?d.speed.local_e2e.p50+'ms':'—'}</div>
-          <div style="display:flex;justify-content:space-between;gap:4px;margin-top:3px"><span class="hgc-m-sub">end-to-end</span>${d.total?tgtLine(d.speed.local_e2e.p50,TARGETS.p50Local):''}</div>
-        </div>
-        <div class="hgc-metric">
-          <div class="hgc-m-label">Total Events</div>
-          <div class="hgc-m-value" style="color:#e8edf5">${activity.toLocaleString()}</div>
-          <div class="hgc-m-sub">app+dock+hub</div>
-        </div>
-      </div>
-      <div class="hgc-footer">View detailed analytics →</div>`;
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <button class="card-btn-investigate" onclick="event.stopPropagation();openLogCenter({hub:'${h}',tab:'failures'})">Investigate</button>
+        <button class="card-btn-view">View</button>
+      </div>`;
     card.onclick=()=>openHub(h);
     grid.appendChild(card);
   });
@@ -230,7 +254,7 @@ function openHub(hub){
   document.getElementById('detailView').style.display='block';
   document.getElementById('logCenterView').style.display='none';
   setNav('navFleet');
-  document.getElementById('hubTitle').textContent=hub.toUpperCase()+' — Detailed Analytics';
+  document.getElementById('hubTitle').textContent=hub.toUpperCase();
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===0));
   document.querySelectorAll('.tab-pane').forEach((p,i)=>p.style.display=i===0?'block':'none');
   renderDetail(hub);
@@ -347,12 +371,29 @@ function evHour(ts){if(!ts||ts.length<13)return -1;const h=parseInt(ts.slice(11,
 let _dailyArr=[];
 function allSourceDaily(hub){
   const pool=buildEventPool(hub),m={};
-  pool.forEach(e=>{const day=(e.ts||'').slice(0,10);if(!day)return;const o=m[day]||(m[day]={total:0,fail:0});o.total++;if(e.status==='fail')o.fail++;});
+  pool.forEach(e=>{
+    const day=(e.ts||'').slice(0,10);if(!day)return;
+    const o=m[day]||(m[day]={total:0,fail:0,app:0,dock:0,hub:0,failApp:0,failDock:0,failHub:0});
+    o.total++;
+    const src = eventSrcClass(e);
+    if(src==='app'||src==='remote') o.app++;
+    else if(src==='dock') o.dock++;
+    else o.hub++;
+    
+    if(e.status==='fail'){
+      o.fail++;
+      if(src==='app'||src==='remote') o.failApp++;
+      else if(src==='dock') o.failDock++;
+      else o.failHub++;
+    }
+  });
   const appByDate={};(D[hub].daily||[]).forEach(r=>{appByDate[r.date]=r;});
   return Object.keys(m).sort().map(date=>{const a=appByDate[date]||{};return{
-    date,total:m[date].total,
+    date,total:m[date].total,fail:m[date].fail,
+    app:m[date].app, dock:m[date].dock, hub:m[date].hub,
+    failApp:m[date].failApp, failDock:m[date].failDock, failHub:m[date].failHub,
     rel:m[date].total?+(100*(m[date].total-m[date].fail)/m[date].total).toFixed(2):0,
-    p50:a.p50!=null?a.p50:0,ns:a.ns!=null?a.ns:null};});
+    p50:a.p50!=null?a.p50:null,ns:a.ns!=null?a.ns:null};});
 }
 
 function getAllEvents(hubFilter){
@@ -798,17 +839,25 @@ function renderDetail(hub){
   const nsC=parseFloat(nsAvg)>=95?'var(--green)':parseFloat(nsAvg)>=80?'var(--yellow)':'var(--red)';
   const kpiEl=document.getElementById('topKPIs');
   kpiEl.style.gridTemplateColumns='repeat(5,1fr)';
+  const INFO_ICON = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin-left:2px;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`;
+  const ts = "display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:700;color:#e8edf5;";
+  const ib = (key) => `<button class="info-btn" style="border:none;background:none" onclick="event.stopPropagation();showInfo('${key}')">${INFO_ICON}</button>`;
+
+  const appFails=(D[hub].failures||[]).filter(f=>f.src==='App Control'||f.src==='Remote App').length;
+  const dockFails=(D[hub].failures||[]).filter(f=>f.src==='Dock Control').length;
+  const hubFails=f-appFails-dockFails;
+
   kpiEl.innerHTML=`
-    <div class="kpi" onclick="openLogCenter({hub:'${hub}',tab:'all',context:{label:'${hub.toUpperCase()} — All Activity',desc:'All reliable events · ${activePeriodLabel()}'}})"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Total Events<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_total')">ⓘ</button></div><div class="value">${(d.total_activity!=null?d.total_activity:d.total).toLocaleString()}</div><div class="sub">App ${(d.usage&&d.usage.app)||0} · Dock ${(d.usage&&d.usage.docklet)||0} · Hub ${((d.usage&&(d.usage.hub_scene_total||0)+(d.usage.hub_auto_total||0)))||0}</div></div>
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[2],'reliability')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_reliability')">ⓘ</button></div><div class="value" style="color:${_act?relColor(_arel):'var(--muted)'}">${_act?_arel+'%':'—'}</div><div class="sub">${_act?'All-source success · click for breakdown':'No activity in range'}</div></div>
-    <div class="kpi" onclick="switchTab(document.querySelectorAll('.tab')[1],'speed')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">P50 Latency<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_latency')">ⓘ</button></div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.total&&d.speed.local_e2e.p50!=null?d.speed.local_e2e.p50+'ms':'—'}</div><div class="sub">Click for speed drill-down</div></div>
-    <div class="kpi" style="cursor:pointer" onclick="openLogCenter({hub:'${hub}',tab:'failures',context:{label:'${hub.toUpperCase()} — All Failures',desc:'${f} failures · ${activePeriodLabel()}'}})">
-      <div class="label" style="display:flex;justify-content:space-between;align-items:center">Failures<button class="info-btn" onclick="event.stopPropagation();showInfo('hub_failures')">ⓘ</button></div><div class="value" style="color:var(--red)">${f}</div>
-      <div class="sub" style="color:var(--blue)">Click → Log Center</div></div>
+    <div class="kpi" onclick="openLogCenter({hub:'${hub}',tab:'all',context:{label:'${hub.toUpperCase()} — All Activity',desc:'All reliable events · ${activePeriodLabel()}'}})"><div class="label" style="${ts}">TOTAL EVENTS${ib('hub_total')}</div><div class="value">${(d.total_activity!=null?d.total_activity:d.total).toLocaleString()}</div><div class="sub">App ${(d.usage&&d.usage.app)||0} · Dock ${(d.usage&&d.usage.docklet)||0} · Hub ${((d.usage&&(d.usage.hub_scene_total||0)+(d.usage.hub_auto_total||0)))||0}</div></div>
+    <div class="kpi" onclick="showHubRelModal('${hub}')"><div class="label" style="${ts}">RELIABILITY${ib('hub_reliability')}</div><div class="value" style="color:${_act?relColor(_arel):'var(--muted)'}">${_act?_arel+'%':'—'}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">${_act?(_act-f).toLocaleString()+' Success, '+f.toLocaleString()+' Failures':'No activity in range'}</span>${_act?tgtLine(parseFloat(_arel),TARGETS.reliability):''}</div></div>
+    <div class="kpi" onclick="showHubSpeedModal('${hub}')"><div class="label" style="${ts}">P50 SPEED${ib('hub_latency')}</div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.total&&d.speed.local_e2e.p50!=null?d.speed.local_e2e.p50+'ms':'—'}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Median Response Time</span>${tgtLine(d.speed.local_e2e.p50,TARGETS.p50Local)}</div></div>
     <div class="kpi" style="cursor:pointer" onclick="showHubNSModal('${hub}')">
-      <div class="label" style="display:flex;justify-content:space-between;align-items:center">North Star (Sub-1s)<button class="info-btn" onclick="event.stopPropagation();showInfo('fleet_northstar')">ⓘ</button></div>
+      <div class="label" style="${ts}">NORTH STAR${ib('fleet_northstar')}</div>
       <div class="value" style="color:${nsC}">${nsAvg}%</div>
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Click for breakdown</span>${tgtLine(parseFloat(nsAvg),TARGETS.northStar)}</div></div>`;
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Actions completed in &lt; 1 second</span>${tgtLine(parseFloat(nsAvg),TARGETS.northStar)}</div></div>
+    <div class="kpi" style="cursor:pointer" onclick="openLogCenter({hub:'${hub}',tab:'failures',context:{label:'${hub.toUpperCase()} — All Failures',desc:'${f} failures · ${activePeriodLabel()}'}})">
+      <div class="label" style="${ts}">FAILURES${ib('hub_failures')}</div><div class="value" style="color:var(--red)">${f}</div>
+      <div class="sub" style="margin-top:4px">App ${appFails} · Dock ${dockFails} · Hub ${hubFails}</div></div>`;
   // Empty-period notice: app-side panels are all zero when no app events fall in
   // the selected range (not a bug — hub-recorded activity may still exist under Usage).
   const _eb=document.getElementById('emptyPeriodBanner');
@@ -909,33 +958,183 @@ function showDayDebug(hub,dayIdx,focus){
 }
 
 function renderOverall(d){
-  const _nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
-  const _nsC=parseFloat(_nsAvg)>=95?'var(--green)':parseFloat(_nsAvg)>=80?'var(--yellow)':'var(--red)';
-  const _nsBar=document.getElementById('nsKpiBar');
-  if(_nsBar)_nsBar.innerHTML=`<div onclick="showHubNSModal('${activeHub}')" style="display:flex;align-items:center;gap:14px;padding:9px 14px;background:var(--bg);border-radius:6px;margin-bottom:10px;cursor:pointer;border:1px solid var(--border);transition:border-color .15s" onmouseover="this.style.borderColor='var(--blue)'" onmouseout="this.style.borderColor='var(--border)'"><div style="font-size:26px;font-weight:700;color:${_nsC};line-height:1">${_nsAvg}%</div><div><div style="display:flex;align-items:baseline;gap:10px"><span style="font-size:12px;color:#e8edf5;font-weight:600">Period Average</span>${tgtLine(parseFloat(_nsAvg),TARGETS.northStar)}</div><div style="font-size:9px;color:var(--blue);margin-top:3px">Click to see formula &amp; full breakdown →</div></div></div>`;
+
   _dailyArr=allSourceDaily(activeHub);
-  const dates=_dailyArr.map(r=>r.date.slice(5));
+  const interp = (arr) => {
+    let res = [...arr];
+    for(let i=0;i<res.length;i++){
+      if(res[i]==null){
+        let p=res.slice(0,i).reverse().find(v=>v!=null);
+        let n=res.slice(i+1).find(v=>v!=null);
+        res[i] = (p!=null && n!=null) ? (p+n)/2 : (p!=null?p:(n!=null?n:0));
+      }
+    }
+    return res;
+  };
+  const _p50Arr = interp(_dailyArr.map(r=>r.p50));
+  const _nsArr = interp(_dailyArr.map(r=>r.ns));
+  const dates=_dailyArr.map(r=>`${r.date.slice(8,10)}-${r.date.slice(5,7)}`);
+  const relPt=document.createElement('canvas'); relPt.width=24; relPt.height=10;
+  const ctxR=relPt.getContext('2d'); ctxR.strokeStyle='#1fa355'; ctxR.fillStyle='#1fa355'; ctxR.lineWidth=1.5; ctxR.setLineDash([3,3]); ctxR.beginPath(); ctxR.moveTo(0,5); ctxR.lineTo(24,5); ctxR.stroke(); ctxR.setLineDash([]); ctxR.beginPath(); ctxR.arc(12,5,3.5,0,Math.PI*2); ctxR.fill();
+  const tgtPt=document.createElement('canvas'); tgtPt.width=24; tgtPt.height=10;
+  const ctxT=tgtPt.getContext('2d'); ctxT.strokeStyle='rgba(160,160,160,1)'; ctxT.lineWidth=1.5; ctxT.setLineDash([3,3]); ctxT.beginPath(); ctxT.moveTo(0,5); ctxT.lineTo(24,5); ctxT.stroke();
+  const p50Pt=document.createElement('canvas'); p50Pt.width=24; p50Pt.height=10;
+  const ctxP=p50Pt.getContext('2d'); ctxP.strokeStyle='#d4961f'; ctxP.fillStyle='#d4961f'; ctxP.lineWidth=1.5; ctxP.beginPath(); ctxP.moveTo(0,5); ctxP.lineTo(24,5); ctxP.stroke(); ctxP.beginPath(); ctxP.arc(12,5,3.5,0,Math.PI*2); ctxP.fill();
+  const nsPt=document.createElement('canvas'); nsPt.width=24; nsPt.height=10;
+  const ctxN=nsPt.getContext('2d'); ctxN.strokeStyle='#3d82f0'; ctxN.fillStyle='#3d82f0'; ctxN.lineWidth=1.5; ctxN.beginPath(); ctxN.moveTo(0,5); ctxN.lineTo(24,5); ctxN.stroke(); ctxN.beginPath(); ctxN.arc(12,5,3.5,0,Math.PI*2); ctxN.fill();
+
   charts.daily=mc('dailyChart',{type:'bar',data:{labels:dates,datasets:[
-    {label:'Events (all sources)',data:_dailyArr.map(r=>r.total),backgroundColor:'#2a6bd4',borderRadius:2,order:2},
-    {label:'Reliability %',data:_dailyArr.map(r=>r.rel),type:'line',borderColor:'#1fa355',yAxisID:'y1',tension:.3,pointRadius:3,borderWidth:1.5,order:1},
-    {label:'Target 97%',data:dates.map(()=>97),type:'line',yAxisID:'y1',borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0,order:0}]},
+    {label:'Hub Events',data:_dailyArr.map(r=>r.hub),backgroundColor:'#9353d4',pointStyle:'rect',order:4,stack:'Stack 0'},
+    {label:'App Events',data:_dailyArr.map(r=>r.app),backgroundColor:'#3d82f0',pointStyle:'rect',order:3,stack:'Stack 0'},
+    {label:'Dock Events',data:_dailyArr.map(r=>r.dock),backgroundColor:'#d4961f',pointStyle:'rect',order:2,stack:'Stack 0'},
+    {label:'Reliability %',data:_dailyArr.map(r=>r.rel),type:'line',borderColor:'#1fa355',backgroundColor:'#1fa355',yAxisID:'y1',tension:.3,pointRadius:3,pointStyle:'circle',borderWidth:1.5,borderDash:[3,3],order:1},
+    {label:'Target %',data:dates.map(()=>97),type:'line',yAxisID:'y1',borderColor:'rgba(160,160,160,1)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,pointStyle:'line',fill:false,tension:0,order:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       onClick:(e,els)=>{if(!els.length)return;
-        // datasetIndex 0 = Events bar, 1 = Reliability line, 2 = target
-        const focus=els[0].datasetIndex===1?'reliability':'events';
+        const focus=els[0].datasetIndex===3?'reliability':'events';
         showDayDebug(activeHub,els[0].index,focus);},
-      plugins:{tooltip:{filter:function(item){return item.datasetIndex<2;},callbacks:{label:function(ctx){return ctx.dataset.label+': '+(ctx.dataset.yAxisID==='y1'?ctx.parsed.y.toFixed(2)+'%':ctx.parsed.y+' events')}}}},
-      scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},
-        y1:{title:{display:true,text:'Reliability %'},position:'right',min:0,max:102,grid:{display:false}},
-        x:{title:{display:true,text:'Date'}}}}});
+      plugins:{
+        legend:{
+          labels:{
+            usePointStyle:true,boxWidth:32,padding:20,sort:(a,b)=>a.datasetIndex-b.datasetIndex,
+            generateLabels:function(chart){
+              const labels=Chart.defaults.plugins.legend.labels.generateLabels(chart);
+              labels.forEach(l=>{
+                if(l.datasetIndex===3){l.pointStyle=relPt; l.boxWidth=32;}
+                else if(l.datasetIndex===4){l.pointStyle=tgtPt; l.boxWidth=32;}
+                else { l.pointStyle='rect'; l.boxWidth=12; }
+              });
+              return labels;
+            }
+          }
+        },
+        tooltip:{
+          usePointStyle:true,boxWidth:28,boxHeight:10,itemSort:(a,b)=>a.datasetIndex-b.datasetIndex,filter:function(item){return item.datasetIndex<4;},
+          callbacks:{
+            labelPointStyle:function(ctx){
+              if(ctx.datasetIndex===3)return{pointStyle:relPt,rotation:0};
+              if(ctx.datasetIndex===4)return{pointStyle:tgtPt,rotation:0};
+              return{pointStyle:'rect',rotation:0};
+            },
+            label:function(ctx){return ctx.dataset.label+': '+(ctx.dataset.yAxisID==='y1'?ctx.parsed.y.toFixed(2)+'%':ctx.parsed.y+' events')}
+          }
+        }
+      },
+      scales:{
+        x:{stacked:true, title:{display:true,text:'Date'}, grid:{color:'rgba(255,255,255,0.02)'}},
+        y:{stacked:true, title:{display:true,text:'Event Count'},beginAtZero:true, grid:{color:'rgba(255,255,255,0.02)'}},
+        y1:{title:{display:true,text:'Reliability %'},position:'right',min:0,max:102,grid:{display:false}}
+      }
+    }
+  });
+
+  charts.p50=mc('p50Chart',{type:'line',data:{labels:dates,datasets:[
+    {label:'P50 Speed (ms)',data:_p50Arr,borderColor:'#d4961f',backgroundColor:'rgba(212,150,31,.1)',fill:true,tension:.3,pointRadius:3,spanGaps:true,order:1},
+    {label:'Target (ms)',data:dates.map(()=>1000),borderColor:'rgba(160,160,160,1)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false,tension:0,order:0}]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{
+          labels:{
+            usePointStyle:true,boxWidth:32,padding:20,sort:(a,b)=>a.datasetIndex-b.datasetIndex,
+            generateLabels:function(chart){
+              const labels=Chart.defaults.plugins.legend.labels.generateLabels(chart);
+              labels.forEach(l=>{
+                if(l.datasetIndex===0){l.pointStyle=p50Pt; l.boxWidth=32;}
+                else if(l.datasetIndex===1){l.pointStyle=tgtPt; l.boxWidth=32;}
+              });
+              return labels;
+            }
+          }
+        },
+        tooltip:{
+          usePointStyle:true,boxWidth:28,boxHeight:10,itemSort:(a,b)=>a.datasetIndex-b.datasetIndex,
+          callbacks:{
+            labelPointStyle:function(ctx){
+              if(ctx.datasetIndex===0)return{pointStyle:p50Pt,rotation:0};
+              if(ctx.datasetIndex===1)return{pointStyle:tgtPt,rotation:0};
+              return{pointStyle:'circle',rotation:0};
+            },
+            label:function(ctx){
+              if(ctx.datasetIndex===0)return 'P50 (ms) : '+Math.round(ctx.parsed.y)+' ms';
+              if(ctx.datasetIndex===1)return 'Target (ms) : <1000 ms';
+              return ctx.dataset.label+': '+ctx.parsed.y+' ms';
+            }
+          }
+        }
+      },
+      scales:{
+        x:{title:{display:true,text:'Date'}, grid:{color:'rgba(255,255,255,0.02)'}},
+        y:{title:{display:true,text:'P50 Speed (ms)'},beginAtZero:true, grid:{color:'rgba(255,255,255,0.02)'}}
+      }
+    }
+  });
 
   charts.ns=mc('nsChart',{type:'line',data:{labels:dates,datasets:[
-    {label:'Sub-1s % (app commands)',data:_dailyArr.map(r=>r.ns),borderColor:'#3d82f0',backgroundColor:'rgba(61,130,240,.1)',fill:true,tension:.3,pointRadius:3,spanGaps:true},
-    {label:'Target 95%',data:dates.map(()=>95),borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0}]},
+    {label:'North Star %',data:_nsArr,borderColor:'#3d82f0',backgroundColor:'rgba(61,130,240,.1)',fill:true,tension:.3,pointRadius:3,spanGaps:true,order:1},
+    {label:'Target %',data:dates.map(()=>95),borderColor:'rgba(160,160,160,1)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false,tension:0,order:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       onClick:(e,els)=>{if(!els.length)return;showDayDebug(activeHub,els[0].index,'ns');},
-      plugins:{tooltip:{filter:function(item){return item.datasetIndex===0;},callbacks:{label:function(ctx){return 'Sub-1s: '+ctx.parsed.y.toFixed(1)+'%'}}}},
-      scales:{y:{title:{display:true,text:'% Events Under 1 Second (click to inspect)'},min:60,max:102},x:{title:{display:true,text:'Date'}}}}});
+      plugins:{
+        legend:{
+          labels:{
+            usePointStyle:true,boxWidth:32,padding:20,sort:(a,b)=>a.datasetIndex-b.datasetIndex,
+            generateLabels:function(chart){
+              const labels=Chart.defaults.plugins.legend.labels.generateLabels(chart);
+              labels.forEach(l=>{
+                if(l.datasetIndex===0){l.pointStyle=nsPt; l.boxWidth=32;}
+                else if(l.datasetIndex===1){l.pointStyle=tgtPt; l.boxWidth=32;}
+              });
+              return labels;
+            }
+          }
+        },
+        tooltip:{
+          usePointStyle:true,boxWidth:28,boxHeight:10,itemSort:(a,b)=>a.datasetIndex-b.datasetIndex,
+          callbacks:{
+            labelPointStyle:function(ctx){
+              if(ctx.datasetIndex===0)return{pointStyle:nsPt,rotation:0};
+              if(ctx.datasetIndex===1)return{pointStyle:tgtPt,rotation:0};
+              return{pointStyle:'circle',rotation:0};
+            },
+            label:function(ctx){
+              if(ctx.datasetIndex===0)return 'NS: '+ctx.parsed.y.toFixed(1)+'%';
+              if(ctx.datasetIndex===1)return 'Target: >= 95%';
+              return ctx.dataset.label+': '+ctx.parsed.y;
+            }
+          }
+        }
+      },
+      scales:{
+        x:{title:{display:true,text:'Date'}, grid:{color:'rgba(255,255,255,0.02)'}},
+        y:{title:{display:true,text:'North Star %'},beginAtZero:false,min:60,max:102, grid:{color:'rgba(255,255,255,0.02)'}}
+      }
+    }
+  });
+
+  charts.failTrend=mc('failTrendChart',{type:'bar',data:{labels:dates,datasets:[
+    {label:'Hub Failures',data:_dailyArr.map(r=>r.failHub),backgroundColor:'#9353d4',pointStyle:'rect',order:3,stack:'Stack 0'},
+    {label:'App Failures',data:_dailyArr.map(r=>r.failApp),backgroundColor:'#e04545',pointStyle:'rect',order:2,stack:'Stack 0'},
+    {label:'Dock Failures',data:_dailyArr.map(r=>r.failDock),backgroundColor:'#d4961f',pointStyle:'rect',order:1,stack:'Stack 0'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      onClick:(e,els)=>{if(!els.length)return;showDayDebug(activeHub,els[0].index,'reliability');},
+      plugins:{
+        legend:{
+          labels:{
+            usePointStyle:true,boxWidth:12,padding:20,sort:(a,b)=>a.datasetIndex-b.datasetIndex
+          }
+        },
+        tooltip:{
+          usePointStyle:true,boxWidth:12,itemSort:(a,b)=>a.datasetIndex-b.datasetIndex,
+          callbacks:{label:function(ctx){return ctx.dataset.label+': '+ctx.parsed.y}}
+        }
+      },
+      scales:{
+        x:{stacked:true, title:{display:true,text:'Date'}, grid:{color:'rgba(255,255,255,0.02)'}},
+        y:{stacked:true, title:{display:true,text:'Failure Count'},beginAtZero:true, grid:{color:'rgba(255,255,255,0.02)'}}
+      }
+    }
+  });
 
   // ── Heatmaps built from the SAME event pool the Log Center uses, so a cell
   // count always equals its day+hour drill-down (all sources: app/remote/dock/hub).
@@ -949,46 +1148,37 @@ function renderOverall(d){
 
   const hm=document.getElementById('heatmapContainer');hm.innerHTML='';
   const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-  hm.innerHTML+='<div class="heatmap-label"></div>';
-  for(let h=0;h<24;h++)hm.innerHTML+=`<div class="heatmap-label" style="text-align:center">${h}</div>`;
   const maxV=Math.max(...Object.values(hmAll),1);
   days.forEach(day=>{
-    hm.innerHTML+=`<div class="heatmap-label">${day.slice(0,3)}</div>`;
+    hm.innerHTML+=`<div class="heatmap-label" style="border-right:1px solid var(--border)">${day.slice(0,3)}</div>`;
     for(let h=0;h<24;h++){
       const k=`${day}_${h}`,v=hmAll[k]||0,intensity=v/maxV;
       const bg=intensity>0?`rgba(61,130,240,${.08+intensity*.72})`:'#0c1018';
       const det=hmDet[k]||{app:0,remote:0,dock:0,hub:0};
       hm.innerHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
-        onmouseover="showHeatTip(this,'${day}',${h},${v},${det.app},${det.remote},${det.dock},${det.hub})"
-        onmouseout="hideHeatTip(this)"
         onclick="openLogCenter({hub:'${activeHub}',tab:'all',dayFilter:'${day}',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v} Events',desc:'App: ${det.app} · Remote: ${det.remote} · Dock: ${det.dock} · Hub: ${det.hub}'}})">
         ${v||''}</div>`}});
+  hm.innerHTML+='<div class="heatmap-label" style="border-right:1px solid var(--border);border-top:1px solid var(--border)"></div>';
+  for(let h=0;h<24;h++)hm.innerHTML+=`<div class="heatmap-label" style="text-align:center;border-top:1px solid var(--border)">${h}</div>`;
 
   // Failures heatmap — red scale (same pool, status==='fail')
   const fhm=document.getElementById('failHeatmapContainer');
   if(fhm){
     fhm.innerHTML='';
-    fhm.innerHTML+='<div class="heatmap-label"></div>';
-    for(let h=0;h<24;h++)fhm.innerHTML+=`<div class="heatmap-label" style="text-align:center">${h}</div>`;
     const fmaxV=Math.max(...Object.values(hmFail),1);
     days.forEach(day=>{
-      fhm.innerHTML+=`<div class="heatmap-label">${day.slice(0,3)}</div>`;
+      fhm.innerHTML+=`<div class="heatmap-label" style="border-right:1px solid var(--border)">${day.slice(0,3)}</div>`;
       for(let h=0;h<24;h++){
         const k=`${day}_${h}`,v=(hmFail[k]||0),intensity=v/fmaxV;
         const bg=intensity>0?`rgba(224,69,69,${.1+intensity*.8})`:'#0c1018';
         fhm.innerHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
-          onmouseover="showFailHeatTip(this,'${day}',${h},${v})"
-          onmouseout="hideHeatTip(this)"
           onclick="openLogCenter({hub:'${activeHub}',tab:'failures',dayFilter:'${day}',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v} Failures',desc:'Failures in this time slot'}})">
           ${v||''}</div>`}});
+    fhm.innerHTML+='<div class="heatmap-label" style="border-right:1px solid var(--border);border-top:1px solid var(--border)"></div>';
+    for(let h=0;h<24;h++)fhm.innerHTML+=`<div class="heatmap-label" style="text-align:center;border-top:1px solid var(--border)">${h}</div>`;
   }
 }
 
-window.showHeatTip=function(el,day,h,v,app,rem,dock,hub){
-  let tip=document.createElement('div');tip.className='tooltip-box';
-  tip.innerHTML=`<strong>${day} ${h}:00</strong><br>${v} events<hr style="border-color:var(--border);margin:4px 0">App: ${app} · Remote: ${rem}<br>Dock: ${dock} · Hub: ${hub}<br><span style="font-size:9px;color:var(--blue)">Click → Log Center</span>`;
-  el.style.position='relative';el.appendChild(tip);tip.style.position='absolute';tip.style.bottom='100%';tip.style.left='50%';tip.style.transform='translateX(-50%)'};
-window.hideHeatTip=function(el){const t=el.querySelector('.tooltip-box');if(t)t.remove()};
 window.showFailHeatTip=function(el,day,h,v){
   let tip=document.createElement('div');tip.className='tooltip-box';
   tip.innerHTML=`<strong>${day} ${h}:00</strong><br><span style="color:var(--red);font-weight:700">${v} failure${v!==1?'s':''}</span><br><span style="font-size:9px;color:var(--blue)">Click → Log Center</span>`;
@@ -1636,102 +1826,420 @@ function showFleetModal(type){
   const fRel=fTotal>0?((fSuccess/fTotal)*100).toFixed(2):0;
   const fP50=Math.round(fLatencies.reduce((a,b)=>a+b.p50,0)/fLatencies.length);
   const fNSavg=fNS.length>0?(fNS.reduce((a,b)=>a+b,0)/fNS.length).toFixed(1):0;
-  const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
 
   let title='',body='';
   if(type==='reliability'){
-    title='Fleet Reliability — Debug View';
-    body=`<table style="font-size:12px;margin-bottom:4px">
-      ${row('Formula','Σ Successful ÷ Σ Total (All Hubs)')}
-      ${row('Total Events',`<strong style="font-size:16px">${fTotal.toLocaleString()}</strong>`)}
-      ${row('Successful',`<strong style="color:var(--green)">${fSuccess.toLocaleString()}</strong>`)}
-      ${row('Failed',`<strong style="color:var(--red);font-size:16px">${fFail.toLocaleString()}</strong>`)}
-      ${row('Fleet Reliability',`<strong style="font-size:16px;color:${relColor(fRel)}">${fRel}%</strong>`)}
+    title='';
+    body=`
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;font-weight:normal;margin-top:-24px">Debug View</div>
+    <div style="font-size:18px;font-weight:700;color:#e8edf5;margin-bottom:8px">RELIABILITY</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:24px;font-family:monospace">Formula: Σ Successful ÷ Σ Total (All Hubs)</div>
+    
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">RELIABILITY</div>
+        <div style="font-size:20px;font-weight:700;color:${relColor(fRel)}">${fRel}%</div>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">SUCCESS</div>
+        <div style="font-size:20px;font-weight:700;color:#e8edf5">${fSuccess.toLocaleString()}</div>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">FAILURES</div>
+        <div style="font-size:20px;font-weight:700;color:#e8edf5">${fFail.toLocaleString()}</div>
+      </div>
+    </div>
+    
+    <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
+    
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:20px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:#e8edf5;margin-bottom:12px">HUB - WISE BREAKDOWN</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">HUB</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">RELIABILITY</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">FAILURES</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">STATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hubs.map(h=>{
+            const d=D[h]; const f=d.total-d.success;
+            const rc=relColor(d.reliability);
+            const sl=statusLabel(d.reliability);
+          return `<tr>
+            <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-weight:600">${h.toUpperCase()}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:${rc};font-weight:600">${d.reliability}%</td>
+            <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:#e8edf5">${f.toLocaleString()}</td>
+            <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+              <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid ${rc};border-radius:12px;padding:3px 8px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${rc}"></span><span style="color:${rc}">${sl}</span></div>
+            </td>
+            <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+              <button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();openLogCenter({hub:'${h}',tab:'failures'})">Inspect →</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
     </table>
-    <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub Breakdown</span></div>
-    <table style="font-size:11px"><thead><tr><th>Hub</th><th>Reliability</th><th>Failures</th><th>Action</th></tr></thead><tbody>
-    ${hubs.map(h=>{const d=D[h],f=d.total-d.success;const tag=relTag(d.reliability);
-      return`<tr><td><strong>${h.toUpperCase()}</strong></td>
-        <td><span class="tag ${tag}">${d.reliability}%</span></td>
-        <td style="color:${f>0?'var(--red)':'var(--green)'}">${f}</td>
-        <td><button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${h}',tab:'failures',context:{label:'${h.toUpperCase()} Failures',desc:'${f} total failures'}})">Inspect →</button></td></tr>`;
-    }).join('')}
-    </tbody></table></div>
-    <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter({tab:'failures',context:{label:'All Fleet Failures',desc:'${fFail} failures across all hubs'}})">View All Fleet Failures →</button></div>`;
+    </div>
+    
+    <div style="display:flex;justify-content:flex-end;margin-top:20px">
+      <button class="card-btn-investigate" onclick="closeModal();openLogCenter({tab:'failures'})">VIEW ALL FAILURES</button>
+    </div>`;
 
   } else if(type==='latency'){
-    title='Fleet P50 Latency — Debug View';
-    body=`<table style="font-size:12px;margin-bottom:4px">
-      ${row('Fleet Avg P50',`<strong style="font-size:18px">${fP50}ms</strong>`)}
-    </table>
-    <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub Latency</span></div>
-    <table style="font-size:11px"><thead><tr><th>Hub</th><th>P50</th><th>Status</th><th>Action</th></tr></thead><tbody>
-    ${fLatencies.map(l=>{const isSlow=l.p50>800;
-      return`<tr><td><strong>${l.hub.toUpperCase()}</strong></td>
-        <td style="font-weight:600;color:${isSlow?'var(--yellow)':'#e8edf5'}">${l.p50}ms</td>
-        <td><span class="tag ${isSlow?'tag-yellow':'tag-green'}">${isSlow?'Slow':'OK'}</span></td>
-        <td>${isSlow?`<button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${l.hub}',tab:'slow',context:{label:'${l.hub.toUpperCase()} Slow Events',desc:'P50: ${l.p50}ms'}})">Inspect →</button>`:'—'}</td></tr>`;
-    }).join('')}
-    </tbody></table></div>`;
+    title='';
+    body=`
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;font-weight:normal;margin-top:-24px">Debug View</div>
+    <div style="font-size:18px;font-weight:700;color:#e8edf5;margin-bottom:8px">AVG P50 SPEED</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:24px;font-family:monospace">Formula: Median Latency (50th Percentile) of all successful App events</div>
+    
+    <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:24px">
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">AVG P50 SPEED</div>
+        <div style="font-size:20px;font-weight:700;color:#e8edf5">${fP50}ms</div>
+      </div>
+    </div>
+    
+    <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
+    
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:20px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:#e8edf5;margin-bottom:12px">HUB - WISE BREAKDOWN</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">HUB</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">P50</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">STATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${fLatencies.map(l=>{
+            let sl='Healthy', rc='var(--green)';
+            if(l.p50>1000){ sl='Critical'; rc='var(--red)'; }
+            else if(l.p50>800){ sl='Warning'; rc='var(--yellow)'; }
+            return `<tr>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-weight:600">${l.hub.toUpperCase()}</td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:${rc};font-weight:600">${l.p50}ms</td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+                <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid ${rc};border-radius:12px;padding:3px 8px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${rc}"></span><span style="color:${rc}">${sl}</span></div>
+              </td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+                <button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();openLogCenter({hub:'${l.hub}',tab:'slow'})">Inspect →</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    
+    <div style="display:flex;justify-content:flex-end;margin-top:20px">
+      <button class="card-btn-view" onclick="closeModal();openLogCenter({tab:'slow'})">VIEW ALL LOGS</button>
+    </div>`;
 
   } else if(type==='northstar'){
-    title='Fleet North Star — Sub-1s Rate';
+    title='';
     const nsGap=(95-parseFloat(fNSavg)).toFixed(1);
-    body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px"><div style="font-size:11px;color:var(--muted);line-height:1.7"><strong style="color:#e8edf5">What is North Star?</strong><br>The percentage of all device control events completed end-to-end in under 1 second. This is the single most user-facing quality metric — anything over 1s feels like lag to the user. Target: ≥ 95%.</div><div style="font-size:10px;font-family:monospace;background:var(--surface2);border:1px solid var(--border2);padding:8px 12px;border-radius:4px;color:var(--blue);margin-top:10px">NS = ROUND(100 × COUNT(latency_ms &lt; 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div></div>
-    <table style="font-size:12px;margin-bottom:14px">
-      ${row('Fleet North Star',`<strong style="font-size:20px;color:${fNSavg>=95?'var(--green)':fNSavg>=80?'var(--yellow)':'var(--red)'}">${fNSavg}%</strong>`)}
-      ${row('Target','<strong style="color:var(--green)">≥ 95%</strong>')}
-      ${row('Status',parseFloat(fNSavg)>=95?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${nsGap}% gap</span>`)}
-      ${row('Period',`<span style="font-size:11px">${activePeriodLabel()}</span>`)}
-    </table>
-    <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per Hub North Star</span></div>
-    <table style="font-size:11px"><thead><tr><th>Hub</th><th>NS Avg</th><th>Status</th><th>Action</th></tr></thead><tbody>
-    ${hubs.map(h=>{const d=D[h];const nsA=d.daily?((d.daily.reduce((s,dy)=>s+(dy.ns||0),0))/d.daily.length).toFixed(1):'—';const isBad=parseFloat(nsA)<95;
-      return`<tr><td><strong>${h.toUpperCase()}</strong></td>
-        <td style="font-weight:600;color:${isBad?'var(--red)':'var(--green)'}">${nsA}%</td>
-        <td><span class="tag ${isBad?'tag-red':'tag-green'}">${isBad?'Below Target':'On Target'}</span></td>
-        <td>${isBad?`<button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${h}',tab:'slow',context:{label:'${h.toUpperCase()} Slow Events',desc:'North Star at ${nsA}%'}})">Inspect →</button>`:`<button class="dbg-lc-link" onclick="closeModal();showHubNSModal('${h}')">Drill-down →</button>`}</td></tr>`;
-    }).join('')}
-    </tbody></table></div>
-    <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter({tab:'slow',context:{label:'All Fleet Slow Events',desc:'Events exceeding 800ms across all hubs'}})">View All Slow Events →</button></div>`;
+    const nsColor=fNSavg>=95?'var(--green)':fNSavg>=80?'var(--yellow)':'var(--red)';
+    body=`
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;font-weight:normal;margin-top:-24px">Debug View</div>
+    <div style="font-size:18px;font-weight:700;color:#e8edf5;margin-bottom:8px">NORTH STAR</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:24px;font-family:monospace">Formula: ROUND(100 × COUNT(latency_ms < 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div>
+    
+    <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:24px">
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">NORTH STAR</div>
+        <div style="font-size:20px;font-weight:700;color:${nsColor}">${fNSavg}%</div>
+      </div>
+    </div>
+    
+    <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
+    
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:20px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:#e8edf5;margin-bottom:12px">HUB - WISE BREAKDOWN</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">HUB</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">NORTH STAR</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">STATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hubs.map(h=>{
+            const d=D[h];const nsA=d.daily?((d.daily.reduce((s,dy)=>s+(dy.ns||0),0))/d.daily.length).toFixed(1):'—';
+            const val=parseFloat(nsA);
+            let sl='Healthy', rc='var(--green)';
+            const isBad = val<95;
+            if(val<80){ sl='Critical'; rc='var(--red)'; }
+            else if(val<95){ sl='Warning'; rc='var(--yellow)'; }
+            return `<tr>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-weight:600">${h.toUpperCase()}</td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:${rc};font-weight:600">${nsA}%</td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+                <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid ${rc};border-radius:12px;padding:3px 8px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${rc}"></span><span style="color:${rc}">${sl}</span></div>
+              </td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+                ${isBad? `<button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();openLogCenter({hub:'${h}',tab:'slow'})">Inspect →</button>` : `<button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();showHubNSModal('${h}')">Inspect →</button>`}
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    
+    <div style="display:flex;justify-content:flex-end;margin-top:20px">
+      <button class="card-btn-view" onclick="closeModal();openLogCenter({tab:'slow'})">VIEW ALL LOGS</button>
+    </div>`;
   }
   showModal(title,body);
 }
+
+window.showHubRelModal=function(hub){
+  const d=D[hub];if(!d)return;
+  const _act = d.total_activity!=null?d.total_activity:d.total;
+  const f = d.activity_fail!=null?d.activity_fail:(d.total-d.success);
+  const _arel = _act?((_act-f)/_act*100).toFixed(2):0;
+  const recentDays=[...(allSourceDaily(hub)||[])].reverse().slice(0,14);
+  
+  const dayRows=recentDays.map(dy=>{
+    const rc = relColor(dy.rel);
+    const sl = statusLabel(dy.rel);
+    return`<tr>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-size:10px;color:var(--muted)">${dy.date}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:${rc};font-weight:600">${dy.rel}%</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:#e8edf5">${(dy.fail||0).toLocaleString()}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+        <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid ${rc};border-radius:12px;padding:3px 8px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${rc}"></span><span style="color:${rc}">${sl}</span></div>
+      </td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+        <button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'failures',filters:{search:'${dy.date}'}})">Inspect →</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const body=`
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;font-weight:normal;margin-top:-24px">Debug View</div>
+    <div style="font-size:18px;font-weight:700;color:#e8edf5;margin-bottom:8px">RELIABILITY</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:24px;font-family:monospace">Formula: (Successful Commands / Total Attempted Commands) × 100</div>
+    
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">RELIABILITY</div>
+        <div style="font-size:20px;font-weight:700;color:${relColor(_arel)}">${_arel}%</div>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">SUCCESS</div>
+        <div style="font-size:20px;font-weight:700;color:#e8edf5">${(_act-f).toLocaleString()}</div>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">FAILURES</div>
+        <div style="font-size:20px;font-weight:700;color:#e8edf5">${f.toLocaleString()}</div>
+      </div>
+    </div>
+    
+    <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
+    
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:20px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:#e8edf5;margin-bottom:12px">DAILY TREND</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">DATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">RELIABILITY</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">FAILURES</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">STATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${dayRows}
+        </tbody>
+      </table>
+    </div>
+    
+    <div style="display:flex;justify-content:flex-end;margin-top:20px">
+      <button class="card-btn-investigate" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'failures'})">VIEW ALL FAILURES</button>
+    </div>`;
+  showModal('', body);
+};
+
+window.showHubSpeedModal=function(hub){
+  const d=D[hub];if(!d)return;
+  const p50=d.total&&d.speed.local_e2e.p50!=null?d.speed.local_e2e.p50+'ms':'—';
+  const recentDays=[...(allSourceDaily(hub)||[])].reverse().slice(0,14);
+  
+  const dayRows=recentDays.map(dy=>{
+    const v=dy.p50;
+    let sl='Healthy', rc='var(--green)';
+    if(v>1000){ sl='Critical'; rc='var(--red)'; }
+    else if(v>800){ sl='Warning'; rc='var(--yellow)'; }
+    return`<tr>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-size:10px;color:var(--muted)">${dy.date}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:${rc};font-weight:600">${v}ms</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+        <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid ${rc};border-radius:12px;padding:3px 8px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${rc}"></span><span style="color:${rc}">${sl}</span></div>
+      </td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+        <button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'slow',filters:{search:'${dy.date}'}})">Inspect →</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const body=`
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;font-weight:normal;margin-top:-24px">Debug View</div>
+    <div style="font-size:18px;font-weight:700;color:#e8edf5;margin-bottom:8px">P50 SPEED</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:24px;font-family:monospace">Formula: Median Latency (50th Percentile) of all successful App events</div>
+    
+    <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:24px">
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">P50 SPEED</div>
+        <div style="font-size:20px;font-weight:700;color:#e8edf5">${p50}</div>
+      </div>
+    </div>
+    
+    <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
+    
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:20px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:#e8edf5;margin-bottom:12px">DAILY TREND</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">DATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">P50</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">STATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${dayRows}
+        </tbody>
+      </table>
+    </div>
+    
+    <div style="display:flex;justify-content:flex-end;margin-top:20px">
+      <button class="card-btn-view" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'slow'})">VIEW ALL LOGS</button>
+    </div>`;
+  showModal('', body);
+};
 
 window.showHubNSModal=function(hub){
   const d=D[hub];if(!d)return;
   const nsAvg=d.daily&&d.daily.length?(d.daily.reduce((s,dy)=>s+(dy.ns||0),0)/d.daily.length).toFixed(1):0;
   const nsC=parseFloat(nsAvg)>=95?'var(--green)':parseFloat(nsAvg)>=80?'var(--yellow)':'var(--red)';
-  const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
-  const recentDays=[...(d.daily||[])].reverse().slice(0,14);
+  const recentDays=[...(allSourceDaily(hub)||[])].reverse().slice(0,14);
+  
   const dayRows=recentDays.map(dy=>{
     const c=(dy.ns||0)>=95?'var(--green)':(dy.ns||0)>=80?'var(--yellow)':'var(--red)';
-    const isBad=(dy.ns||0)<95;
-    return`<tr><td style="font-family:monospace;font-size:10px;color:var(--muted)">${dy.date}</td><td style="font-weight:600;color:${c}">${(dy.ns||0).toFixed(1)}%</td><td style="color:var(--muted)">${dy.total}</td><td>${isBad?`<button class="dbg-lc-link" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'slow',filters:{search:'${dy.date}'},context:{label:'Slow Events ${dy.date}',desc:'NS was ${(dy.ns||0).toFixed(1)}%'}})">Inspect &rarr;</button>`:'—'}</td></tr>`;
+    const sl=(dy.ns||0)>=95?'Healthy':(dy.ns||0)>=80?'Warning':'Critical';
+    const under1s=Math.round(dy.total * (dy.ns||0) / 100);
+    return`<tr>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-size:10px;color:var(--muted)">${dy.date}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:#e8edf5;font-weight:600">${dy.total.toLocaleString()}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:#e8edf5">${under1s.toLocaleString()}</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border);color:${c};font-weight:600">${(dy.ns||0).toFixed(1)}%</td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+        <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid ${c};border-radius:12px;padding:3px 8px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${c}"></span><span style="color:${c}">${sl}</span></div>
+      </td>
+      <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+        <button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'slow',filters:{search:'${dy.date}'}})">Inspect →</button>
+      </td>
+    </tr>`;
   }).join('');
-  const lcSlow={hub,tab:'slow',context:{label:`${hub.toUpperCase()} — Slow Events`,desc:`North Star at ${nsAvg}% · target ≥95%`}};
-  const body=`<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px 16px;margin-bottom:14px"><div style="font-size:11px;color:var(--muted);line-height:1.7"><strong style="color:#e8edf5">What is North Star?</strong><br>The percentage of all device control events completed end-to-end in under 1 second. This is the single most user-facing quality metric — anything over 1s feels like lag to the user.</div><div style="font-size:10px;font-family:monospace;background:var(--surface2);border:1px solid var(--border2);padding:8px 12px;border-radius:4px;color:var(--blue);margin-top:10px">NS = ROUND(100 &times; COUNT(latency_ms &lt; 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)</div></div>
-  <table style="font-size:12px;margin-bottom:14px">${row('Hub',`<strong>${hub.toUpperCase()}</strong>`)}${row('Period Average',`<strong style="font-size:20px;color:${nsC}">${nsAvg}%</strong>`)}${row('Target','<strong style="color:var(--green)">≥95%</strong>')}${row('Status',parseFloat(nsAvg)>=95?'<span class="tag tag-green">On Target</span>':`<span class="tag tag-red">Below Target — ${(95-parseFloat(nsAvg)).toFixed(1)}% gap</span>`)}${row('Period',activePeriodLabel())}</table>
-  <div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Daily Trend — last ${recentDays.length} days (most recent first)</span></div>
-  <table style="font-size:11px"><thead><tr><th>Date</th><th>NS %</th><th>Total Events</th><th>Action</th></tr></thead><tbody>${dayRows}</tbody></table></div>
-  ${lcBtn(lcSlow,'View All Slow Events in Log Center →')}`;
-  showModal(`${hub.toUpperCase()} — North Star Drill-down`,body);
+
+  const body=`
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;font-weight:normal;margin-top:-24px">Debug View</div>
+    <div style="font-size:18px;font-weight:700;color:#e8edf5;margin-bottom:8px">NORTH STAR</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:24px;font-family:monospace">Formula: (Commands Completed < 1.0s / Total Commands) × 100</div>
+    
+    <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:24px">
+      <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:16px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);font-weight:700;margin-bottom:8px">NORTH STAR</div>
+        <div style="font-size:20px;font-weight:700;color:${nsC}">${nsAvg}%</div>
+      </div>
+    </div>
+    
+    <div style="height:1px;background:var(--border);margin-bottom:20px"></div>
+    
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:20px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:700;color:#e8edf5;margin-bottom:12px">DAILY TREND</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">DATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">TOTAL EVENTS</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">EVENTS UNDER 1 SEC</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">NORTH STAR</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">STATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${dayRows}
+        </tbody>
+      </table>
+    </div>
+    
+    <div style="display:flex;justify-content:flex-end;margin-top:20px">
+      <button class="card-btn-view" onclick="closeModal();openLogCenter({hub:'${hub}',tab:'slow'})">VIEW ALL LOGS</button>
+    </div>`;
+  showModal('', body);
+};
+
+window.showHubListModal=function(){
+  const hubs=Object.keys(D);
+  let body=`
+    <div style="background:var(--card);border:1px solid var(--border2);border-radius:6px;padding:20px;margin-bottom:20px">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">HUB MAC ID</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">STATE</th>
+            <th style="text-align:left;padding:8px;color:var(--muted);border-bottom:1px solid var(--border)">ACTION</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${hubs.map(h=>{
+            const d=D[h];
+            const arel=d.activity_reliability!=null?d.activity_reliability:d.reliability;
+            const rc=relColor(arel);
+            const sl=statusLabel(arel);
+            return `<tr>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-weight:600;font-family:monospace">${h.toUpperCase()}</td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+                <div style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid ${rc};border-radius:12px;padding:3px 8px;font-size:10px"><span style="width:6px;height:6px;border-radius:50%;background:${rc}"></span><span style="color:${rc}">${sl}</span></div>
+              </td>
+              <td style="padding:10px 8px;border-bottom:1px solid var(--border)">
+                <button class="card-btn-view" style="padding:4px 12px;font-size:10px" onclick="closeModal();openHub('${h}')">View Hub →</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  showModal('HUBS OVERVIEW',body);
 };
 
 window.showInfo=function(key){
   const INFO={
-    fleet_total:{title:'Total Fleet Events',body:'The total number of device control commands sent across all your hubs in the selected period. Every time someone taps to turn a light on or off — or a dock button is pressed — that counts as one event.'},
-    fleet_reliability:{title:'Fleet Reliability',body:'Out of all commands sent across every hub, what percentage actually worked? 100% = every command succeeded. Anything below 97% means some lights aren\'t responding as expected. Click the card to see which specific hubs are pulling this number down.'},
-    fleet_latency:{title:'Average P50 Latency',body:'"P50" means the median — half of all commands finished faster than this number, half were slower. Under 500ms feels near-instant to the user. Over 800ms starts to feel noticeably sluggish. This is the average P50 across all your hubs.'},
-    fleet_northstar:{title:'North Star — Sub-1s Rate',body:'What percentage of all commands completed in under 1 second? This is the single most user-facing quality metric — anything over 1s is perceptible lag. A healthy system should stay at 95% or above.'},
-    hub_total:{title:'Total Events',body:'All device commands sent through this specific hub in the selected period — from the app, dock buttons, remote access, and automations combined.'},
-    hub_reliability:{title:'Reliability',body:'The percentage of commands on this hub that completed successfully. Click to jump to the Reliability tab for a full breakdown by control source, failure reason, and per-device failure count.'},
-    hub_latency:{title:'P50 Latency',body:'The median response time for commands through this hub. Half of all commands were faster than this number. Click to jump to the Speed tab, which breaks down latency by each stage of the request pipeline.'},
-    hub_failures:{title:'Failures',body:'The number of commands that failed to complete on this hub in the selected period. Click to open the Log Center pre-filtered to this hub\'s failures for event-level investigation.'},
-    daily_chart:{title:'Daily Events & Reliability',body:'A day-by-day view of two things at once:\n\n• Blue bars = how many commands were sent that day (activity volume)\n• Green line = what percentage succeeded (reliability)\n\nA dip in the green line on a specific day means more commands were failing. Click any bar to investigate what happened on that day.'},
-    ns_chart:{title:'North Star — Sub-1s Rate',body:'Each point shows what percentage of commands on that day finished in under 1 second. A healthy system stays above 95% consistently. Drops usually indicate network congestion, a device issue, or Thread mesh instability. Click any point to see the slow events from that day.'},
-    heatmap:{title:'Activity Heatmap',body:'Shows when devices are controlled most — rows are days of the week, columns are hours of the day (0–23). Darker blue means more activity in that slot.\n\nUseful for spotting patterns like "most control happens on weekday evenings at 7–9pm." Hover any cell for a source breakdown (App · Remote · Dock · Hub scene/automation). Click any cell — the Log Center opens filtered to exactly that day and hour, so the count matches the cell.'},
-    heatmap_fail:{title:'Failures Heatmap',body:'Shows when failures happen most — same grid as the Activity Heatmap but the intensity represents failure count, not total events.\n\nDarker red = more failures in that time slot. A cell glowing red at a specific hour means commands sent then are failing more often — could point to device unavailability, Thread mesh instability, or power cycling at a regular time.\n\nClick any cell to jump to the Log Center filtered to failures in that time slot.'},
+    fleet_total:{title:'TOTAL EVENTS',body:'The total number of commands successfully processed across the entire system. This count includes all actions originating from the APP + DOCK + HUB.'},
+    fleet_reliability:{title:'RELIABILITY',body:'Measures the percentage of commands successfully executed by the system out of all commands attempted.\n\n<b>Formula:</b> (Successful Commands / Total Attempted Commands) × 100\n\n<b>Ranges:</b>\n• Good: > 97%\n• Acceptable: 95% - 97%\n• Bad: < 95%'},
+    fleet_latency:{title:'AVG P50 SPEED',body:'The median response time for commands. Exactly half of all commands are processed faster than this speed, providing a realistic view of typical system performance.\n\n<b>Formula:</b> The 50th percentile value of all end-to-end command execution times.\n\n<b>Ranges:</b>\n• Good: < 800ms\n• Acceptable: 800ms - 1000ms\n• Bad: > 1000ms'},
+    fleet_northstar:{title:'NORTH STAR',body:'The ultimate performance metric reflecting a flawless user experience, defined as the percentage of all commands that complete almost instantly.\n\n<b>Formula:</b> (Commands Completed < 1.0s / Total Commands) × 100\n\n<b>Ranges:</b>\n• Good: > 95%\n• Acceptable: 80% - 95%\n• Bad: < 80%'},
+    hub_total:{title:'TOTAL EVENTS',body:'The total number of commands successfully processed across this system. This count includes all actions originating from the APP + DOCK + HUB.'},
+    hub_reliability:{title:'RELIABILITY',body:'Measures the percentage of commands successfully executed by the system out of all commands attempted.\n\n<b>Formula:</b> (Successful Commands / Total Attempted Commands) × 100\n\n<b>Ranges:</b>\n• Good: > 97%\n• Acceptable: 95% - 97%\n• Bad: < 95%'},
+    hub_latency:{title:'P50 SPEED',body:'The median response time for commands. Exactly half of all commands are processed faster than this speed, providing a realistic view of typical system performance.\n\n<b>Formula:</b> The 50th percentile value of all end-to-end command execution times.\n\n<b>Ranges:</b>\n• Good: < 800ms\n• Acceptable: 800ms - 1000ms\n• Bad: > 1000ms'},
+    hub_failures:{title:'FAILURES',body:'The total number of commands that failed to complete on this hub. In our context, a failure means the system could not successfully execute a command.\n\nThis total includes:\n• App Failures: Commands sent from the user app that failed\n• Dock Failures: Physical docklet presses that failed\n• Hub Failures: Automated scene or schedule executions from the hub that failed'},
+    daily_chart:{title:'DAILY EVENTS & RELIABILITY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">A day-by-day breakdown of system activity and its success rate.\n\n• Hub Events (Violet): Automated actions from the hub (scenes/schedules).\n• App Events (Blue): Manual controls from the user app.\n• Dock Events (Orange): Physical dock button presses.\n• Reliability % (Green Dotted Line): Percentage of total commands that successfully executed.\n• Target % (Grey Dotted Line): The 97% reliability is the goal.\n\nA dip in the green line indicates system issues on that day.'},
+    p50_chart:{title:'P50 SPEED TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Tracks the median response time (P50) of system commands over time.\n\n• P50 Speed (ms) (Orange Line with Dot): The median speed of commands for that day.\n• Target (ms) (Grey Dotted Line): The target response time (<1000ms).\n\nIf the orange line spikes above the target line, it indicates the system was abnormally slow on that day, and you should investigate the slow events.'},
+    ns_chart:{title:'NORTH STAR TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Tracks the percentage of commands that completed almost instantly (under 1 second) over time.\n\n• North Star % (Blue Line with Dot): The percentage of lightning-fast commands for that day.\n• Target % (Grey Dotted Line): The baseline goal of 95%.\n\nDrops in the blue line usually indicate temporary network congestion, a struggling device, or Thread mesh instability. Investigating these dips helps maintain a flawless user experience.'},
+    fail_trend_chart:{title:'FAILURES TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Breaks down exactly which commands failed each day across the system.\n\n• Hub Failures (Violet): Failures from automated hub scenes and schedules.\n• App Failures (Red): Failures from manual controls via the user app.\n• Dock Failures (Orange): Failures from physical dock button presses.\n\nMonitor this graph to easily identify if a spike in unreliability is caused by a specific source (e.g., dock commands failing constantly).'},
+    heatmap:{title:'ACTIVITY HEATMAP',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Shows when devices are controlled most across the entire week.\n\n• Dark Blue: High volume of commands during this hour.\n• Light/Black: Low or no activity during this hour.\n\nAnalyze this grid to spot usage patterns, like most activity happening on weekday evenings. Click any cell to jump into the Log Center and inspect those specific events.'},
+    heatmap_fail:{title:'FAILURES HEATMAP',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Shows when system failures happen most across the entire week.\n\n• Dark Red: High volume of failures during this hour.\n• Light/Black: Low or no failures during this hour.\n\nAnalyze this grid to spot recurring failure patterns. A cell glowing red at the same time every day points to environmental interference, router reboots, or scheduled congestion. Click any cell to jump into the Log Center and inspect those specific failures.'},
     speed_segments:{title:'Speed Segments',body:'Breaks down where time is actually spent when a command is sent. There are 4 stages:\n\n• Hub→SNAP→Hub: How long for the hub to command the physical device and get state confirmed back\n• Hub→App: How long for the hub to push the new state to the phone via WebSocket\n• App Control (Local): Full round trip when the user is on the same Wi-Fi as the hub\n• App Control (Remote): Full round trip when controlling from outside the home\n\nClick any row for event-level detail.'},
     lat_dist:{title:'Latency Distribution',body:'How many commands fell into each speed bucket:\n\n• Green (<500ms): Fast — feels instant\n• Yellow (500ms–1s): Acceptable\n• Orange (1–2s): Getting slow\n• Red (2–5s): Noticeably sluggish\n• Deep Red (>5s): Very slow — investigate\n\nA healthy system has the vast majority of events in the green bucket. Click any bar to see the actual events in that range.'},
     uc_lat:{title:'Latency by Use Case',body:'Compares speed across the different ways devices can be controlled:\n\n• App Control: User tapped the phone app on local Wi-Fi\n• Dock Control: Physical dock button was pressed\n• Remote App: User controlled from outside the home\n• Observed Change: State change detected by the hub (e.g. manual switch)\n\nShows Avg, P50 (typical), and P95 (worst-case). Useful for spotting if one control method is consistently slower.'},
@@ -1770,8 +2278,8 @@ window.onload=async()=>{
   document.getElementById('detailView').style.display='none';
   document.getElementById('logCenterView').style.display='none';
 
-  const s=document.getElementById('drStatus');
-  if(s){s.textContent='Connecting…';s.style.color='var(--blue)';}
+  const loader=document.getElementById('fullPageLoader');
+  if(loader) loader.style.display='flex';
 
   // Hub list is fast (no BigQuery)
   const{hubs}=await fetch('/api/hubs').then(r=>r.json());
@@ -1789,14 +2297,10 @@ window.onload=async()=>{
     </div>`).join('');
 
   // Fetch all hubs in parallel with progress counter
-  let loaded=0;
-  if(s)s.textContent=`Loading 0/${hubs.length}…`;
   await Promise.all(hubs.map(async h=>{
     D[h]=await fetch(`/api/hub/${h}?from_date=${activeFrom}&to_date=${activeTo}`).then(r=>r.json());
-    loaded++;
-    if(s)s.textContent=loaded<hubs.length?`Loading ${loaded}/${hubs.length}…`:'';
   }));
 
-  if(s)s.textContent='';
+  if(loader) loader.style.display='none';
   renderLanding();
 };

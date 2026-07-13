@@ -16,6 +16,12 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["GET"], allow_headers=["*"])
 
+@app.on_event("startup")
+async def startup_event():
+    print("\n" + "="*50)
+    print("🚀 Analytics Dashboard running at: http://localhost:8080")
+    print("="*50 + "\n")
+
 PROJECT = "schnell-home-automation"
 client  = bigquery.Client(project=PROJECT)
 

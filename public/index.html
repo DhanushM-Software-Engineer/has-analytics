@@ -62,7 +62,7 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 .tag-green{background:rgba(78,144,104,.14);color:var(--green)}.tag-red{background:rgba(184,92,82,.14);color:var(--red)}.tag-yellow{background:rgba(184,146,46,.14);color:var(--yellow)}
 .heatmap-grid{display:grid;grid-template-columns:50px repeat(24,1fr);gap:1px;font-size:9px}
 .heatmap-cell{padding:4px 1px;text-align:center;border-radius:2px;cursor:pointer;position:relative}
-.heatmap-label{color:var(--muted);padding:4px 1px;text-align:right;font-size:9px}
+.heatmap-label{color:var(--muted);padding:4px 1px;text-align:right;font-size:9px;background:var(--surface)}
 .formula-ref{font-size:9px;color:var(--muted);font-style:italic;margin-top:3px}
 .speed-segment{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
 .speed-segment:hover{background:var(--surface2);border-radius:4px}
@@ -87,6 +87,7 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 .uc-card{background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:16px;cursor:pointer;transition:border-color .2s,box-shadow .2s}
 .uc-card:hover{border-color:var(--blue);box-shadow:0 4px 20px rgba(0,0,0,.35)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes spin{100%{transform:rotate(360deg)}}
 /* ── Nav ── */
 .nav-bar{background:var(--surface);border-bottom:1px solid var(--border);display:flex;padding:0 28px}
 .nav-item{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:12px;font-weight:500;padding:10px 16px;transition:color .15s}
@@ -160,6 +161,10 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 /* investigate btn */
 .investigate-btn{background:rgba(184,92,82,.08);border:1px solid rgba(184,92,82,.2);border-radius:4px;color:var(--red);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:10px;font-weight:500;padding:4px 10px;transition:all .15s;white-space:nowrap}
 .investigate-btn:hover{background:rgba(184,92,82,.18);border-color:var(--red)}
+.card-btn-investigate{background:none;border:1px solid var(--red);color:var(--red);border-radius:4px;padding:6px 16px;font-size:11px;font-weight:600;cursor:pointer;transition:background 0.15s, color 0.15s}
+.card-btn-investigate:hover{background:var(--red);color:#fff}
+.card-btn-view{background:none;border:1px solid var(--blue);color:var(--blue);border-radius:4px;padding:6px 20px;font-size:11px;font-weight:600;cursor:pointer;transition:background 0.15s, color 0.15s}
+.card-btn-view:hover{background:var(--blue);color:#fff}
 /* modal debug enhancements */
 .dbg-section{margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
 .dbg-section-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
@@ -170,12 +175,33 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 .modal-cta{display:flex;justify-content:flex-end;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}
 .modal-cta-btn{background:rgba(61,130,240,.08);border:1px solid rgba(61,130,240,.2);border-radius:6px;color:var(--blue);cursor:pointer;font-family:'Inter',system-ui,sans-serif;font-size:11px;font-weight:500;padding:8px 16px;transition:all .15s}
 .modal-cta-btn:hover{background:rgba(61,130,240,.18)}
+.hub-count-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.hub-count-btn:hover {
+  background: var(--surface2);
+  border-color: var(--blue);
+  box-shadow: 0 0 8px rgba(99, 146, 216, 0.2);
+}
 </style>
 </head>
 <body>
+<div id="fullPageLoader" style="display:flex;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(7,9,14,0.6);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;color:var(--blue)">
+  <svg viewBox="0 0 24 24" width="48" height="48" style="animation: spin 1s linear infinite; fill: currentColor;"><path d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/></svg>
+</div>
 <div class="header">
-<h1>Schnell Fleet Debugging Dashboard</h1>
-<div class="meta">Engineering · <span id="headerPeriodLabel">30-day window</span> · <span id="hubCount"></span> hubs monitored</div>
+<h1>Home Automation Debugging Dashboard</h1>
+<div style="display:none"><span id="headerPeriodLabel"></span></div>
 </div>
 <div class="nav-bar" id="navBar" style="justify-content:space-between">
 <div style="display:flex">
@@ -195,32 +221,34 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <!-- LANDING -->
 <div id="landingView">
 <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
-<div><h2 style="font-size:17px;color:#e8edf5;font-weight:700;letter-spacing:-.3px">Fleet Overview</h2><p style="color:var(--muted);font-size:11px;margin-top:4px">Real-time system health · Click any hub to drill down</p></div>
+<div><h2 style="font-size:17px;color:#e8edf5;font-weight:700;letter-spacing:-.3px;text-transform:uppercase">FLEET OVERVIEW</h2></div>
+<div style="display:flex;align-items:center;gap:12px">
+<div class="hub-count-btn" onclick="showHubListModal()"><span style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block"></span><span><span id="hubCount"></span> Hubs</span></div>
 <div id="fleetStatusBadge" style="display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:6px 14px;font-size:11px;font-weight:500"></div>
+</div>
 </div>
 <div class="kpi-row" id="fleetKPIs"></div>
 <div class="hub-fleet-section">
 <div class="hub-fleet-bar">
 <div>
-<div style="font-size:13px;font-weight:600;color:#e8edf5">Hub Fleet</div>
-<div style="font-size:11px;color:var(--muted);margin-top:2px">Select a hub to view detailed analytics</div>
+<div style="font-size:13px;font-weight:600;color:#e8edf5">HUB HEALTH FLEET</div>
 </div>
 <div class="hub-search-wrap">
 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-<input id="hubSearch" class="hub-search-input" type="text" placeholder="Search hubs…" oninput="filterHubs(this.value)" autocomplete="off">
+<input id="hubSearch" class="hub-search-input" type="text" placeholder="Search Any Hub" oninput="filterHubs(this.value)" autocomplete="off">
 </div>
 </div>
 <div class="hub-fleet-body">
-<div id="hubCardsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px"></div>
+<div id="hubCardsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:16px"></div>
 <div id="hubSearchEmpty" class="hub-empty-state" style="display:none">No hubs match your search.</div>
 </div>
 </div>
 </div>
 <!-- DETAIL -->
 <div id="detailView">
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-<h2 style="font-size:15px;color:#e8edf5" id="hubTitle">Hub</h2>
-<button class="btn" onclick="showLanding()">← Back to Fleet</button>
+<div style="display:flex;align-items:center;margin-bottom:20px;gap:12px">
+<button class="btn" onclick="showLanding()" style="padding:6px 12px;font-size:16px;line-height:1">←</button>
+<h2 style="font-size:20px;color:#e8edf5;font-weight:700;margin:0;font-family:monospace" id="hubTitle">Hub</h2>
 </div>
 <div class="kpi-row" id="topKPIs"></div>
 <div id="emptyPeriodBanner" style="display:none;background:rgba(212,150,31,.08);border:1px solid rgba(212,150,31,.35);border-radius:8px;padding:14px 18px;margin-bottom:16px"></div>
@@ -234,13 +262,17 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 </div>
 <div id="tab-overall" class="tab-pane">
 <div class="grid-2">
-<div class="panel"><h3>Daily Events & Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('daily_chart')">ⓘ</button></h3><div class="chart-box"><canvas id="dailyChart"></canvas></div></div>
-<div class="panel"><h3>North Star: Sub-1s Success Rate<button class="info-btn" onclick="event.stopPropagation();showInfo('ns_chart')">ⓘ</button></h3><p style="color:var(--muted);font-size:10px;margin:-4px 0 8px">% of events completed end-to-end in under 1 second</p><div id="nsKpiBar"></div><div class="chart-box"><canvas id="nsChart"></canvas></div></div>
+<div class="panel"><h3>DAILY EVENTS & RELIABILITY<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('daily_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="dailyChart"></canvas></div></div>
+<div class="panel"><h3>P50 SPEED TREND<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('p50_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="p50Chart"></canvas></div></div>
 </div>
-<div class="panel"><h3><span>Activity Heatmap — <span style="font-weight:400;color:var(--muted)">Hover for breakdown · Click to inspect in Log Center</span></span><button class="info-btn" onclick="event.stopPropagation();showInfo('heatmap')">ⓘ</button></h3>
-<div style="display:flex"><div class="y-label">Day of Week</div><div style="flex:1"><div id="heatmapContainer" class="heatmap-grid"></div><div style="text-align:center;font-size:10px;color:var(--muted);margin-top:4px">Hour of Day (0–23)</div></div></div></div>
-<div class="panel"><h3><span>Failures Heatmap — <span style="font-weight:400;color:var(--muted)">When failures occur most · Click to inspect in Log Center</span></span><button class="info-btn" onclick="event.stopPropagation();showInfo('heatmap_fail')">ⓘ</button></h3>
-<div style="display:flex"><div class="y-label">Day of Week</div><div style="flex:1"><div id="failHeatmapContainer" class="heatmap-grid"></div><div style="text-align:center;font-size:10px;color:var(--muted);margin-top:4px">Hour of Day (0–23)</div></div></div></div>
+<div class="grid-2">
+<div class="panel"><h3>NORTH STAR TREND<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('ns_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="nsChart"></canvas></div></div>
+<div class="panel"><h3>FAILURES TREND<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('fail_trend_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="failTrendChart"></canvas></div></div>
+</div>
+<div class="panel"><h3>ACTIVITY HEATMAP<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('heatmap')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
+<div style="display:flex;margin-top:16px"><div style="display:flex;flex-direction:column;justify-content:center;padding-bottom:20px"><div class="y-label">Day of the Week</div></div><div style="flex:1"><div id="heatmapContainer" class="heatmap-grid" style="background:rgba(255,255,255,0.02)"></div><div style="text-align:center;font-size:10px;color:var(--muted);margin-top:4px">Hour of the Day</div></div></div></div>
+<div class="panel"><h3>FAILURES HEATMAP<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('heatmap_fail')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
+<div style="display:flex;margin-top:16px"><div style="display:flex;flex-direction:column;justify-content:center;padding-bottom:20px"><div class="y-label">Day of the Week</div></div><div style="flex:1"><div id="failHeatmapContainer" class="heatmap-grid" style="background:rgba(255,255,255,0.02)"></div><div style="text-align:center;font-size:10px;color:var(--muted);margin-top:4px">Hour of the Day</div></div></div></div>
 </div>
 <div id="tab-speed" class="tab-pane" style="display:none">
 <div class="panel"><h3>Speed Segments — Click any segment for event-level drill-down<button class="info-btn" onclick="event.stopPropagation();showInfo('speed_segments')">ⓘ</button></h3>
