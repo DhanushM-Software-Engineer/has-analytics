@@ -27,7 +27,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 .info-btn:hover{border-color:var(--blue);color:var(--blue);background:rgba(61,130,240,.1)}
 .chart-box{position:relative;height:220px}
 table{width:100%;border-collapse:collapse;font-size:11px}
-th{text-align:left;padding:7px 8px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:.3px}
+th{text-align:left;padding:7px 8px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:.3px}
 td{padding:7px 8px;border-bottom:1px solid var(--border)}
 tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 .hub-grid-card{background:var(--card);border:1px solid var(--border2);border-radius:8px;padding:18px 20px;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .15s}
@@ -62,9 +62,38 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 .tag-green{background:rgba(78,144,104,.14);color:var(--green)}.tag-red{background:rgba(184,92,82,.14);color:var(--red)}.tag-yellow{background:rgba(184,146,46,.14);color:var(--yellow)}
 .heatmap-grid{display:grid;grid-template-columns:50px repeat(24,1fr);gap:1px;font-size:9px}
 .heatmap-cell{padding:4px 1px;text-align:center;border-radius:2px;cursor:pointer;position:relative}
+.heatmap-tooltip {
+  display:none;
+  position:absolute;
+  bottom:100%;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.8);
+  border-radius:4px;
+  padding:8px 10px;
+  width:150px;
+  z-index:1000;
+  color:#fff;
+  font-size:11px;
+  text-align:left;
+  pointer-events:none;
+  margin-bottom:6px;
+}
+.heatmap-tooltip::after {
+  content:'';
+  position:absolute;
+  top:100%;
+  left:50%;
+  margin-left:-5px;
+  border-width:5px;
+  border-style:solid;
+  border-color:rgba(0,0,0,0.8) transparent transparent transparent;
+}
+.heatmap-cell:hover .heatmap-tooltip { display:block; }
+
 .heatmap-label{color:var(--muted);padding:4px 1px;text-align:right;font-size:9px;background:var(--surface)}
 .formula-ref{font-size:9px;color:var(--muted);font-style:italic;margin-top:3px}
-.speed-segment{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.speed-segment{display:flex;justify-content:space-between;align-items:center;padding:24px 0;border-bottom:1px solid rgba(255,255,255,0.05);cursor:pointer;transition:background 0.1s;}
 .speed-segment:hover{background:var(--surface2);border-radius:4px}
 .seg-name{flex:1;font-size:11px}.seg-bar{flex:2;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
 .seg-fill{height:100%;border-radius:3px}.seg-val{font-size:16px;font-weight:600;color:#e8edf5;min-width:70px;text-align:right}
@@ -193,6 +222,25 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
   border-color: var(--blue);
   box-shadow: 0 0 8px rgba(99, 146, 216, 0.2);
 }
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
 </style>
 </head>
 <body>
@@ -263,7 +311,7 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div id="tab-overall" class="tab-pane">
 <div class="grid-2">
 <div class="panel"><h3>DAILY EVENTS & RELIABILITY<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('daily_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="dailyChart"></canvas></div></div>
-<div class="panel"><h3>P50 SPEED TREND<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('p50_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="p50Chart"></canvas></div></div>
+<div class="panel"><h3>P50 & P95 SPEED TREND<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('p50_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="p50Chart"></canvas></div></div>
 </div>
 <div class="grid-2">
 <div class="panel"><h3>NORTH STAR TREND<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('ns_chart')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><div class="chart-box" style="height:260px"><canvas id="nsChart"></canvas></div></div>
@@ -275,31 +323,170 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div style="display:flex;margin-top:16px"><div style="display:flex;flex-direction:column;justify-content:center;padding-bottom:20px"><div class="y-label">Day of the Week</div></div><div style="flex:1"><div id="failHeatmapContainer" class="heatmap-grid" style="background:rgba(255,255,255,0.02)"></div><div style="text-align:center;font-size:10px;color:var(--muted);margin-top:4px">Hour of the Day</div></div></div></div>
 </div>
 <div id="tab-speed" class="tab-pane" style="display:none">
-<div class="panel"><h3>Speed Segments — Click any segment for event-level drill-down<button class="info-btn" onclick="event.stopPropagation();showInfo('speed_segments')">ⓘ</button></h3>
-<p style="color:var(--muted);font-size:10px;margin-bottom:12px">Each segment shows where time is spent in the request pipeline.</p>
+<div class="grid-2" style="margin-bottom:16px;">
+  <div class="panel" style="margin-bottom:0">
+    <h3>SPEED DISTRIBUTION<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('lat_dist')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
+    <div class="chart-box" style="height:260px"><canvas id="latDistChart"></canvas></div>
+  </div>
+  <div class="panel" style="margin-bottom:0">
+    <h3>AVG & SD TREND<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('avg_sd_trend')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
+    <div style="display:flex; justify-content:center; gap:16px; font-size:11px; color:rgba(255,255,255,0.7); margin-bottom:8px">
+      <div style="display:flex; align-items:center; gap:6px">
+        <div style="width:24px; height:2px; background:#3d82f0; position:relative; display:flex; align-items:center; justify-content:center">
+           <div style="width:6px; height:6px; border-radius:50%; background:#3d82f0; border:2px solid var(--panel)"></div>
+        </div>
+        <span>Avg Speed (ms)</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px">
+        <div style="width:24px; height:0; border-top:2px dashed #1fa355"></div>
+        <span>AVG + SD</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px">
+        <div style="width:24px; height:0; border-top:2px dashed #e04545"></div>
+        <span>AVG - SD</span>
+      </div>
+    </div>
+    <div class="chart-box" style="height:238px"><canvas id="avgSdTrendChart"></canvas></div>
+  </div>
+</div>
+<div class="panel"><h3>SPEED SEGMENTS<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('speed_segments')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
 <div id="speedSegments"></div></div>
-<div class="panel"><h3>Latency Distribution — Click bar to inspect events<button class="info-btn" onclick="event.stopPropagation();showInfo('lat_dist')">ⓘ</button></h3><div class="chart-box"><canvas id="latDistChart"></canvas></div></div>
 <div class="panel"><h3>Speed by Use Case — Click any card to inspect events<button class="info-btn" onclick="event.stopPropagation();showInfo('uc_speed_metrics')">ⓘ</button></h3>
 <p style="color:var(--muted);font-size:10px;margin:-4px 0 14px">Each card shows the latency distribution for that trigger type. Bar colours: <span style="color:#1fa355">■</span> &lt;500ms <span style="color:#d4961f">■</span> 500ms–1s <span style="color:#e07a20">■</span> 1–2s <span style="color:#e04545">■</span> &gt;2s</p>
 <div id="ucCardsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px"></div></div>
 </div>
 <div id="tab-reliability" class="tab-pane" style="display:none">
-<div class="kpi-row" id="relKPIs"></div>
-<div class="panel"><h3>Per-Source Reliability — Click row to debug failures<button class="info-btn" onclick="event.stopPropagation();showInfo('src_rel')">ⓘ</button></h3><table><thead><tr><th>Source</th><th>Total</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Action</th></tr></thead><tbody id="srcRelTable"></tbody></table></div>
-<div class="grid-2">
-<div class="panel"><h3>Reliability Trend — Click any point to inspect failures on that day<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_trend')">ⓘ</button></h3><div class="chart-box"><canvas id="relTrendChart"></canvas></div></div>
-<div class="panel"><h3>Dock Reliability — Click row for action breakdown<button class="info-btn" onclick="event.stopPropagation();showInfo('dock_rel')">ⓘ</button></h3><div id="dockSortBar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;color:var(--muted)">Sort by failures: <button id="dockSortBtn" onclick="toggleDockSort()" style="background:var(--card);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:10px;padding:2px 8px;cursor:pointer">Most ▼</button></div><div class="scroll-table"><table><thead><tr><th>Dock ID</th><th>Presses</th><th>Success</th><th>Failed</th><th>Reliability</th><th>Docklets</th></tr></thead><tbody id="dockDetailTable"></tbody></table></div></div>
+
+<div class="grid-2" style="margin-bottom:16px; align-items:flex-start">
+  <!-- Left: Reliability Trend -->
+  <div class="panel" style="margin-bottom:0; display:flex; flex-direction:column">
+    <h3 style="flex-shrink:0">RELIABILITY TREND<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_trend')" style="border:none;background:none;padding:0;margin-left:6px"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
+    <div style="display:flex; justify-content:center; gap:24px; margin-bottom:12px; font-size:12px; color:var(--text); flex-shrink:0">
+      <div style="display:flex; align-items:center; gap:8px">
+        <div style="width:24px; height:2px; background:#1fa355; display:flex; align-items:center; justify-content:center"><div style="width:8px; height:8px; background:#1fa355; border-radius:50%"></div></div>
+        Reliability percentage
+      </div>
+      <div style="display:flex; align-items:center; gap:8px">
+        <div style="width:24px; height:2px; border-bottom:2px dashed rgba(220,232,248,.25)"></div>
+        Target %
+      </div>
+    </div>
+    <div class="chart-box" style="flex:1; min-height:220px; position:relative"><canvas id="relTrendChart"></canvas></div>
+  </div>
+
+  <!-- Right: Reliability By Source -->
+  <div class="panel" style="margin-bottom:0; display:flex; flex-direction:column">
+    <h3 style="flex-shrink:0">RELIABILITY BY SOURCE<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_source')" style="border:none;background:none;padding:0;margin-left:6px"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
+    <div id="srcRelCards" style="flex:1; display:flex; flex-direction:column; justify-content:center; gap:8px; padding-top:8px"></div>
+  </div>
 </div>
-<div class="panel"><h3>Failures by Reason — Click to diagnose<button class="info-btn" onclick="event.stopPropagation();showInfo('fail_reason')">ⓘ</button></h3><table><thead><tr><th>Reason</th><th>Count</th><th>Action</th></tr></thead><tbody id="failReasonTable"></tbody></table></div>
-<div class="panel"><h3>Failures by Device<button class="info-btn" onclick="event.stopPropagation();showInfo('fail_device')">ⓘ</button></h3><div style="overflow-x:auto"><table><thead><tr><th>Device</th><th style="text-align:center">Total</th><th style="text-align:center">NO_RESPONSE</th><th style="text-align:center">TIMEOUT</th><th style="text-align:center">DEVICE_OFFLINE</th><th style="text-align:center">THREAD_MESH_FAIL</th><th style="text-align:center">DEVICE_UNAVAILABLE</th><th>Action</th></tr></thead><tbody id="failDevTable"></tbody></table></div></div>
-<div class="panel"><h3>Device Activity — Click row for device details<button class="info-btn" onclick="event.stopPropagation();showInfo('dev_activity')">ⓘ</button></h3><div class="scroll-table"><table><thead><tr><th>Device</th><th>Room</th><th>Events</th><th>Reliability</th><th>P50</th></tr></thead><tbody id="devActivityTable"></tbody></table></div></div>
+
+<div class="grid-2" style="margin-bottom:16px; align-items:flex-start">
+  <div class="panel" style="margin-bottom:0; display:flex; flex-direction:column; position:relative">
+    <h3 style="flex-shrink:0; text-transform:uppercase; display:flex; align-items:center; position:relative;">DOCK RELIABILITY
+      <div style="margin-left:auto; display:flex; align-items:center;">
+        <button class="info-btn" onclick="event.stopPropagation();document.getElementById('dockSortOverlay').style.display='block';document.getElementById('dockSortPopup').style.display='block'" style="border:none;background:none;padding:0;margin-right:8px"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
+        <button class="info-btn" onclick="event.stopPropagation();showInfo('dock_rel')" style="border:none;background:none;padding:0;"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+      </div>
+      <div id="dockSortOverlay" onclick="this.style.display='none';document.getElementById('dockSortPopup').style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:99;"></div>
+      <div id="dockSortPopup" style="display:none; position:absolute; top:32px; right:24px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; z-index:100; box-shadow:0 8px 24px rgba(0,0,0,0.6); min-width: 140px; text-transform:none; font-weight:normal; letter-spacing:normal">
+        <div style="font-size:12px; color:var(--muted); margin-bottom:8px; font-weight:600; padding-left:6px">Sort by Failures</div>
+        <div class="clickable" onclick="renderDockTable('most')" style="padding:8px 6px; font-size:13px; cursor:pointer; border-radius:4px; color:var(--text); display:flex; align-items:center; gap:12px"><div style="width:14px;height:14px;border-radius:50%;border:1px solid #fff;display:flex;align-items:center;justify-content:center"><div id="sortMostDot" style="width:8px;height:8px;border-radius:50%;background:var(--blue)"></div></div>Most</div>
+        <div class="clickable" onclick="renderDockTable('least')" style="padding:8px 6px; font-size:13px; cursor:pointer; border-radius:4px; color:var(--text); display:flex; align-items:center; gap:12px"><div style="width:14px;height:14px;border-radius:50%;border:1px solid #fff;display:flex;align-items:center;justify-content:center"><div id="sortLeastDot" style="width:8px;height:8px;border-radius:50%;background:transparent"></div></div>Least</div>
+      </div>
+    </h3>
+    <div class="custom-scrollbar" style="flex:1; overflow-y:auto; margin-top:12px; max-height:220px; padding-right:8px">
+      <table>
+        <thead>
+          <tr>
+            <th>Dock ID</th>
+            <th style="text-align:center">Presses</th>
+            <th style="text-align:center">Success</th>
+            <th style="text-align:center">Failures</th>
+            <th>Reliability</th>
+            <th>State</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="dockRelTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:0; display:flex; flex-direction:column">
+    <h3 style="flex-shrink:0">FAILURES BY REASON<button class="info-btn" onclick="event.stopPropagation();showInfo('fail_reason')" style="border:none;background:none;padding:0;margin-left:6px"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3>
+    <div style="flex:1; display:flex; align-items:center; justify-content:center; padding:8px 0">
+      <div style="height:140px; width:35%; position:relative"><canvas id="failReasonChart"></canvas></div>
+      <div id="failReasonLegend" style="display:flex; flex-direction:column; gap:6px; padding:0 10px; width:45%"></div>
+    </div>
+  </div>
 </div>
+
+<div class="panel" style="position:relative; display:flex; flex-direction:column; padding-bottom:12px">
+  <h3 style="flex-shrink:0; text-transform:uppercase; display:flex; align-items:center; position:relative;">FAILURES BY DEVICE
+    <div style="margin-left:auto; display:flex; align-items:center;">
+      <button class="info-btn" onclick="event.stopPropagation();document.getElementById('failSortOverlay').style.display='block';document.getElementById('failSortPopup').style.display='block'" style="border:none;background:none;padding:0;margin-right:8px"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg></button>
+      <button class="info-btn" onclick="event.stopPropagation();showInfo('fail_device')" style="border:none;background:none;padding:0;"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>
+    </div>
+    <div id="failSortOverlay" onclick="this.style.display='none';document.getElementById('failSortPopup').style.display='none'" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:99;"></div>
+    <div id="failSortPopup" style="display:none; position:absolute; top:32px; right:24px; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px; z-index:100; box-shadow:0 8px 24px rgba(0,0,0,0.6); min-width: 140px; text-transform:none; font-weight:normal; letter-spacing:normal">
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px; font-weight:600; padding-left:6px">Sort by Failures</div>
+      <div class="clickable" onclick="renderFailDevTable('most')" style="padding:8px 6px; font-size:13px; cursor:pointer; border-radius:4px; color:var(--text); display:flex; align-items:center; gap:12px"><div style="width:14px;height:14px;border-radius:50%;border:1px solid #fff;display:flex;align-items:center;justify-content:center"><div id="failSortMostDot" style="width:8px;height:8px;border-radius:50%;background:var(--blue)"></div></div>Most</div>
+      <div class="clickable" onclick="renderFailDevTable('least')" style="padding:8px 6px; font-size:13px; cursor:pointer; border-radius:4px; color:var(--text); display:flex; align-items:center; gap:12px"><div style="width:14px;height:14px;border-radius:50%;border:1px solid #fff;display:flex;align-items:center;justify-content:center"><div id="failSortLeastDot" style="width:8px;height:8px;border-radius:50%;background:transparent"></div></div>Least</div>
+    </div>
+  </h3>
+  <div class="custom-scrollbar" style="flex:1; overflow-y:auto; margin-top:12px; max-height:300px; padding-right:8px">
+    <table>
+      <thead>
+        <tr>
+          <th>Device</th>
+          <th style="text-align:center">Reliability</th>
+          <th style="text-align:center">Total Failures</th>
+          <th style="text-align:center">No Response</th>
+          <th style="text-align:center">Timeout</th>
+          <th style="text-align:center">Device Offline</th>
+          <th style="text-align:center">Device Unavailable</th>
+          <th style="text-align:center">Thread Mesh Fail</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="failDevTable"></tbody>
+    </table>
+  </div>
+</div>
+</div>
+
 <div id="tab-usage" class="tab-pane" style="display:none">
-<div class="grid-3" id="usageKPIs"></div>
-<div class="panel"><h3>Source Breakdown<button class="info-btn" onclick="event.stopPropagation();showInfo('src_chart')">ⓘ</button></h3><div class="chart-box"><canvas id="srcChart"></canvas></div></div>
-<div class="panel" id="dockUsagePanel" style="display:none;margin-top:16px"></div>
-</div>
-<div id="tab-node" class="tab-pane" style="display:none"></div>
+    <div class="grid-2" style="margin-bottom:16px">
+      <div class="kpi" style="margin-bottom:0; cursor:default">
+        <h3 style="font-size:12px;font-weight:700;color:#fff;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center">OVERALL USAGE<button class="info-btn" onclick="event.stopPropagation();showInfo('overall_usage')" style="border:none;background:none;padding:0;margin-left:6px"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+        <div style="display:flex; justify-content:center; gap:16px; font-size:11px; color:rgba(255,255,255,0.7); margin-bottom:12px; flex-wrap:wrap">
+          <div style="display:flex; align-items:center; gap:6px"><div style="width:10px; height:10px; background:#9d65c9; border:1px solid rgba(255,255,255,0.2)"></div><span>HUB (Automations / Scenes)</span></div>
+          <div style="display:flex; align-items:center; gap:6px"><div style="width:10px; height:10px; background:#3d82f0; border:1px solid rgba(255,255,255,0.2)"></div><span>APP (Local)</span></div>
+          <div style="display:flex; align-items:center; gap:6px"><div style="width:10px; height:10px; background:#d4961f; border:1px solid rgba(255,255,255,0.2)"></div><span>DOCK</span></div>
+          <div style="display:flex; align-items:center; gap:6px"><div style="width:10px; height:10px; background:#1fa355; border:1px solid rgba(255,255,255,0.2)"></div><span>APP (Remote)</span></div>
+        </div>
+        <div class="chart-box" style="height:260px"><canvas id="srcChart"></canvas></div>
+      </div>
+      <div class="kpi" style="margin-bottom:0; cursor:default">
+        <h3 style="font-size:12px;font-weight:700;color:#fff;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center">USAGE TREND<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_trend')" style="border:none;background:none;padding:0;margin-left:6px"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></h3><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+        <div style="display:flex; justify-content:center; gap:16px; font-size:11px; color:rgba(255,255,255,0.7); margin-bottom:12px; flex-wrap:wrap">
+          <div style="display:flex; align-items:center; gap:6px"><div style="width:10px; height:10px; background:#9d65c9; border:1px solid rgba(255,255,255,0.2)"></div><span>HUB</span></div>
+          <div style="display:flex; align-items:center; gap:6px"><div style="width:10px; height:10px; background:#3d82f0; border:1px solid rgba(255,255,255,0.2)"></div><span>APP</span></div>
+          <div style="display:flex; align-items:center; gap:6px"><div style="width:10px; height:10px; background:#d4961f; border:1px solid rgba(255,255,255,0.2)"></div><span>DOCK</span></div>
+        </div>
+        <div class="chart-box" style="height:260px"><canvas id="usageTrendChart"></canvas></div>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:16px;">
+      <div id="activeSnapBtn" class="kpi" onclick="showInfo('active_snap')" style="padding:10px 20px; font-size:12px; font-weight:600; cursor:pointer; min-width:auto; transition:background 0.2s; color:#fff; display:flex; justify-content:space-between; align-items:center;">
+        ACTIVE SNAP DEVICES - 0
+      </div>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(5, 1fr); gap:16px; margin-bottom:16px" id="usageKPIs"></div>
+    <div class="kpi" id="dockUsagePanel" style="display:none;margin-top:16px; cursor:default"></div>
+  </div>
+  <div id="tab-node" class="tab-pane" style="display:none"></div>
 <div id="tab-thread" class="tab-pane" style="display:none"></div>
 </div>
 <!-- LOG CENTER -->
@@ -346,6 +533,6 @@ tr.clickable{cursor:pointer}tr.clickable:hover{background:var(--surface2)}
 <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
 <div class="modal"><h2 id="modalTitle"><span></span><span class="close" onclick="closeModal()">✕</span></h2><div id="modalBody"></div></div>
 </div>
-<script src="dashboard_app.js"></script>
+<script src="dashboard_app.js" charset="utf-8"></script>
 </body>
 </html>

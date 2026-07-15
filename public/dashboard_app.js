@@ -393,7 +393,7 @@ function allSourceDaily(hub){
     app:m[date].app, dock:m[date].dock, hub:m[date].hub,
     failApp:m[date].failApp, failDock:m[date].failDock, failHub:m[date].failHub,
     rel:m[date].total?+(100*(m[date].total-m[date].fail)/m[date].total).toFixed(2):0,
-    p50:a.p50!=null?a.p50:null,ns:a.ns!=null?a.ns:null};});
+    p50:a.p50!=null?a.p50:null,p95:a.p95!=null?a.p95:null,ns:a.ns!=null?a.ns:null,avg:a.avg!=null?a.avg:null,sd:a.sd!=null?a.sd:null};});
 }
 
 function getAllEvents(hubFilter){
@@ -972,6 +972,7 @@ function renderOverall(d){
     return res;
   };
   const _p50Arr = interp(_dailyArr.map(r=>r.p50));
+    const _p95Arr = interp(_dailyArr.map(r=>r.p95));
   const _nsArr = interp(_dailyArr.map(r=>r.ns));
   const dates=_dailyArr.map(r=>`${r.date.slice(8,10)}-${r.date.slice(5,7)}`);
   const relPt=document.createElement('canvas'); relPt.width=24; relPt.height=10;
@@ -980,6 +981,8 @@ function renderOverall(d){
   const ctxT=tgtPt.getContext('2d'); ctxT.strokeStyle='rgba(160,160,160,1)'; ctxT.lineWidth=1.5; ctxT.setLineDash([3,3]); ctxT.beginPath(); ctxT.moveTo(0,5); ctxT.lineTo(24,5); ctxT.stroke();
   const p50Pt=document.createElement('canvas'); p50Pt.width=24; p50Pt.height=10;
   const ctxP=p50Pt.getContext('2d'); ctxP.strokeStyle='#d4961f'; ctxP.fillStyle='#d4961f'; ctxP.lineWidth=1.5; ctxP.beginPath(); ctxP.moveTo(0,5); ctxP.lineTo(24,5); ctxP.stroke(); ctxP.beginPath(); ctxP.arc(12,5,3.5,0,Math.PI*2); ctxP.fill();
+  const p95Pt=document.createElement('canvas'); p95Pt.width=24; p95Pt.height=10;
+  const ctxP95=p95Pt.getContext('2d'); ctxP95.strokeStyle='#e74c3c'; ctxP95.fillStyle='#e74c3c'; ctxP95.lineWidth=1.5; ctxP95.beginPath(); ctxP95.moveTo(0,5); ctxP95.lineTo(24,5); ctxP95.stroke(); ctxP95.beginPath(); ctxP95.arc(12,5,3.5,0,Math.PI*2); ctxP95.fill();
   const nsPt=document.createElement('canvas'); nsPt.width=24; nsPt.height=10;
   const ctxN=nsPt.getContext('2d'); ctxN.strokeStyle='#3d82f0'; ctxN.fillStyle='#3d82f0'; ctxN.lineWidth=1.5; ctxN.beginPath(); ctxN.moveTo(0,5); ctxN.lineTo(24,5); ctxN.stroke(); ctxN.beginPath(); ctxN.arc(12,5,3.5,0,Math.PI*2); ctxN.fill();
 
@@ -1030,6 +1033,7 @@ function renderOverall(d){
 
   charts.p50=mc('p50Chart',{type:'line',data:{labels:dates,datasets:[
     {label:'P50 Speed (ms)',data:_p50Arr,borderColor:'#d4961f',backgroundColor:'rgba(212,150,31,.1)',fill:true,tension:.3,pointRadius:3,spanGaps:true,order:1},
+    {label:'P95 Speed (ms)',data:_p95Arr,borderColor:'#e74c3c',backgroundColor:'rgba(231,76,60,0.1)',fill:true,tension:.3,pointRadius:3,spanGaps:true,order:2},
     {label:'Target (ms)',data:dates.map(()=>1000),borderColor:'rgba(160,160,160,1)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false,tension:0,order:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{
@@ -1040,7 +1044,8 @@ function renderOverall(d){
               const labels=Chart.defaults.plugins.legend.labels.generateLabels(chart);
               labels.forEach(l=>{
                 if(l.datasetIndex===0){l.pointStyle=p50Pt; l.boxWidth=32;}
-                else if(l.datasetIndex===1){l.pointStyle=tgtPt; l.boxWidth=32;}
+                else if(l.datasetIndex===1){l.pointStyle=p95Pt; l.boxWidth=32;}
+                else if(l.datasetIndex===2){l.pointStyle=tgtPt; l.boxWidth=32;}
               });
               return labels;
             }
@@ -1051,12 +1056,14 @@ function renderOverall(d){
           callbacks:{
             labelPointStyle:function(ctx){
               if(ctx.datasetIndex===0)return{pointStyle:p50Pt,rotation:0};
-              if(ctx.datasetIndex===1)return{pointStyle:tgtPt,rotation:0};
+              if(ctx.datasetIndex===1)return{pointStyle:p95Pt,rotation:0};
+              if(ctx.datasetIndex===2)return{pointStyle:tgtPt,rotation:0};
               return{pointStyle:'circle',rotation:0};
             },
             label:function(ctx){
               if(ctx.datasetIndex===0)return 'P50 (ms) : '+Math.round(ctx.parsed.y)+' ms';
-              if(ctx.datasetIndex===1)return 'Target (ms) : <1000 ms';
+              if(ctx.datasetIndex===1)return 'P95 (ms) : '+Math.round(ctx.parsed.y)+' ms';
+              if(ctx.datasetIndex===2)return 'Target (ms) : <1000 ms';
               return ctx.dataset.label+': '+ctx.parsed.y+' ms';
             }
           }
@@ -1064,7 +1071,7 @@ function renderOverall(d){
       },
       scales:{
         x:{title:{display:true,text:'Date'}, grid:{color:'rgba(255,255,255,0.02)'}},
-        y:{title:{display:true,text:'P50 Speed (ms)'},beginAtZero:true, grid:{color:'rgba(255,255,255,0.02)'}}
+        y:{title:{display:true,text:'Speed (ms)'},beginAtZero:true, grid:{color:'rgba(255,255,255,0.02)'}}
       }
     }
   });
@@ -1139,43 +1146,73 @@ function renderOverall(d){
   // ── Heatmaps built from the SAME event pool the Log Center uses, so a cell
   // count always equals its day+hour drill-down (all sources: app/remote/dock/hub).
   const pool=buildEventPool(activeHub);
-  const hmAll={},hmDet={},hmFail={};
+  const hmAll={},hmDet={},hmFail={},hmFailDet={};
   pool.forEach(e=>{const dw=evDow(e.ts),hr=evHour(e.ts);if(dw===null||hr<0)return;
     const k=`${dw}_${hr}`;
     hmAll[k]=(hmAll[k]||0)+1;
     const det=hmDet[k]||(hmDet[k]={app:0,remote:0,dock:0,hub:0});det[eventSrcClass(e)]++;
-    if(e.status==='fail')hmFail[k]=(hmFail[k]||0)+1;});
+    if(e.status==='fail'){
+      hmFail[k]=(hmFail[k]||0)+1;
+      const fdet=hmFailDet[k]||(hmFailDet[k]={app:0,remote:0,dock:0,hub:0});fdet[eventSrcClass(e)]++;
+    }});
 
-  const hm=document.getElementById('heatmapContainer');hm.innerHTML='';
+  const hm=document.getElementById('heatmapContainer');
   const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const maxV=Math.max(...Object.values(hmAll),1);
+  let hmHTML = '';
   days.forEach(day=>{
-    hm.innerHTML+=`<div class="heatmap-label" style="border-right:1px solid var(--border)">${day.slice(0,3)}</div>`;
+    hmHTML+=`<div class="heatmap-label" style="border-right:1px solid var(--border)">${day.slice(0,3)}</div>`;
     for(let h=0;h<24;h++){
       const k=`${day}_${h}`,v=hmAll[k]||0,intensity=v/maxV;
       const bg=intensity>0?`rgba(61,130,240,${.08+intensity*.72})`:'#0c1018';
       const det=hmDet[k]||{app:0,remote:0,dock:0,hub:0};
-      hm.innerHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
-        onclick="openLogCenter({hub:'${activeHub}',tab:'all',dayFilter:'${day}',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v} Events',desc:'App: ${det.app} · Remote: ${det.remote} · Dock: ${det.dock} · Hub: ${det.hub}'}})">
-        ${v||''}</div>`}});
-  hm.innerHTML+='<div class="heatmap-label" style="border-right:1px solid var(--border);border-top:1px solid var(--border)"></div>';
-  for(let h=0;h<24;h++)hm.innerHTML+=`<div class="heatmap-label" style="text-align:center;border-top:1px solid var(--border)">${h}</div>`;
+      
+      const tooltip = `<div class="heatmap-tooltip">
+  <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-weight:bold;">
+    <span>${day.toUpperCase()}</span><span>${h}:00</span>
+  </div>
+  <hr style="border:0; border-top:1px solid rgba(255,255,255,0.15); margin:4px 0 8px 0;">
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> HUB: ${det.hub}</div>
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> APP: ${det.app}</div>
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> DOCK: ${det.dock}</div>
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> REMOTE: ${det.remote}</div>
+</div>`;
 
-  // Failures heatmap — red scale (same pool, status==='fail')
+      hmHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
+        onclick="openLogCenter({hub:'${activeHub}',tab:'all',dayFilter:'${day}',hourFilter:${h},context:{label:'${day} ${h}:00 - ${v} Events',desc:'App: ${det.app} � Remote: ${det.remote} � Dock: ${det.dock} � Hub: ${det.hub}'}})">
+        ${v||''}${tooltip}</div>`}});
+  hmHTML+='<div class="heatmap-label" style="border-right:1px solid var(--border);border-top:1px solid var(--border)"></div>';
+  for(let h=0;h<24;h++)hmHTML+=`<div class="heatmap-label" style="text-align:center;border-top:1px solid var(--border)">${h}</div>`;
+  hm.innerHTML=hmHTML;
+
   const fhm=document.getElementById('failHeatmapContainer');
   if(fhm){
-    fhm.innerHTML='';
+    let fhmHTML='';
     const fmaxV=Math.max(...Object.values(hmFail),1);
     days.forEach(day=>{
-      fhm.innerHTML+=`<div class="heatmap-label" style="border-right:1px solid var(--border)">${day.slice(0,3)}</div>`;
+      fhmHTML+=`<div class="heatmap-label" style="border-right:1px solid var(--border)">${day.slice(0,3)}</div>`;
       for(let h=0;h<24;h++){
         const k=`${day}_${h}`,v=(hmFail[k]||0),intensity=v/fmaxV;
         const bg=intensity>0?`rgba(224,69,69,${.1+intensity*.8})`:'#0c1018';
-        fhm.innerHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
-          onclick="openLogCenter({hub:'${activeHub}',tab:'failures',dayFilter:'${day}',hourFilter:${h},context:{label:'${day} ${h}:00 — ${v} Failures',desc:'Failures in this time slot'}})">
-          ${v||''}</div>`}});
-    fhm.innerHTML+='<div class="heatmap-label" style="border-right:1px solid var(--border);border-top:1px solid var(--border)"></div>';
-    for(let h=0;h<24;h++)fhm.innerHTML+=`<div class="heatmap-label" style="text-align:center;border-top:1px solid var(--border)">${h}</div>`;
+        const fdet=hmFailDet[k]||{app:0,remote:0,dock:0,hub:0};
+        
+        const ftooltip = `<div class="heatmap-tooltip">
+  <div style="display:flex; justify-content:space-between; margin-bottom:4px; font-weight:bold;">
+    <span>${day.toUpperCase()}</span><span>${h}:00</span>
+  </div>
+  <hr style="border:0; border-top:1px solid rgba(255,255,255,0.15); margin:4px 0 8px 0;">
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> HUB: ${fdet.hub}</div>
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> APP: ${fdet.app}</div>
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> DOCK: ${fdet.dock}</div>
+  <div style="display:flex; align-items:center; margin:3px 0"><span style="display:inline-block; width:6px; height:6px; background:#888888; border-radius:50%; margin-right:6px;"></span> REMOTE: ${fdet.remote}</div>
+</div>`;
+
+        fhmHTML+=`<div class="heatmap-cell" style="background:${bg};color:${intensity>.5?'#fff':'var(--muted)'}"
+          onclick="openLogCenter({hub:'${activeHub}',tab:'failures',dayFilter:'${day}',hourFilter:${h},context:{label:'${day} ${h}:00 - ${v} Failures',desc:'Failures in this time slot'}})">
+          ${v||''}${ftooltip}</div>`}});
+    fhmHTML+='<div class="heatmap-label" style="border-right:1px solid var(--border);border-top:1px solid var(--border)"></div>';
+    for(let h=0;h<24;h++)fhmHTML+=`<div class="heatmap-label" style="text-align:center;border-top:1px solid var(--border)">${h}</div>`;
+    fhm.innerHTML=fhmHTML;
   }
 }
 
@@ -1204,30 +1241,52 @@ function renderSpeed(d){
   const maxBar=Math.max(s.hub_snap_hub.p50||1,s.hub_app.p50||1,48,s.local_e2e.p50||1);
 
   const segs=[
-    {key:'hub_snap_hub',name:'Hub → SNAP → Hub',desc:'Hub issues Matter cmd over Thread mesh → SNAP device activates → state reflected back to hub. This is the device round-trip itself, so it happens the same way no matter who/what triggered it (app, dock, automation, scene, or the hub\'s own UI) — see the Origin column on each sample.',val:s.hub_snap_hub,color:'var(--green)',target:TARGETS.hubSnap,
+    {key:'hub_snap_hub',name:'Hub &rarr; SNAP &rarr; Hub',desc:'Hub issues Matter cmd over Thread mesh &rarr; SNAP device activates &rarr; state reflected back to Hub.',val:s.hub_snap_hub,color:'var(--green)',target:TARGETS.hubSnap,
      cols:[{key:'ts',label:'Event Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'origin',label:'Origin'},{key:'matter_ts',label:'Matter CMD Sent'},{key:'snap_ts',label:'State Reflected'},{key:'lat',label:'Total (ms)'},{key:'room',label:'Room'}]},
-    {key:'hub_app',name:'Hub → App (WebSocket Push)',desc:'Device state confirmed at hub (snap_ts) → hub immediately pushes via WebSocket → app reflects new state. P50: '+s.hub_app.p50+'ms',val:s.hub_app,color:'var(--blue)',target:TARGETS.hubApp,
+    {key:'hub_app',name:'Hub &rarr; App (WebSocket Push)',desc:'Device state confirmed at Hub &rarr; Hub immediately pushes via WebSocket &rarr; App reflects new state.',val:s.hub_app,color:'var(--blue)',target:TARGETS.hubApp,
      derivedEvents:hubAppEvents,
      cols:[{key:'ts',label:'Event Time'},{key:'hub_dispatched',label:'State Confirmed at Hub'},{key:'app_confirmed',label:'App Received (ws_conf)'},{key:'lat',label:'Push (ms)'},{key:'dev',label:'Device'},{key:'room',label:'Room'}]},
-    {key:'local_e2e',name:'App Control (Local)',desc:'Full round-trip on local Wi-Fi: App sends cmd → Hub receives → SNAP device activates → state pushed back to app via WebSocket',val:s.local_e2e,color:'var(--purple)',target:TARGETS.localE2e,
+    {key:'local_e2e',name:'App Control (Local)',desc:'Full round-trip on local Wi-Fi: App sends cmd &rarr; Hub receives &rarr; SNAP device activates &rarr; state pushed back to App via WebSocket',val:s.local_e2e,color:'var(--purple)',target:TARGETS.localE2e,
      cols:[{key:'ts',label:'Tap Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'cmd_sent',label:'CMD Sent'},{key:'rest_resp',label:'Hub ACK\'d'},{key:'ws_conf',label:'App Updated'},{key:'lat',label:'E2E (ms)'}]},
-    {key:'remote_e2e',name:'App Control (Remote)',desc:'Full round-trip via Internet: App sends cmd remotely → Hub receives → SNAP device activates → state pushed back to app via WebSocket',val:s.remote_e2e,color:'var(--yellow)',target:TARGETS.remoteE2e,
+    {key:'remote_e2e',name:'App Control (Remote)',desc:'Full round-trip via Internet: App sends cmd remotely &rarr; Hub receives &rarr; SNAP device activates &rarr; state pushed back to App via WebSocket',val:s.remote_e2e,color:'var(--yellow)',target:TARGETS.remoteE2e,
      cols:[{key:'ts',label:'Tap Time'},{key:'dev',label:'Device'},{key:'uc',label:'Use Case'},{key:'cmd_sent',label:'CMD Sent'},{key:'rest_resp',label:'Hub ACK\'d'},{key:'ws_conf',label:'App Updated'},{key:'lat',label:'E2E (ms)'}]}
   ];
 
   const el=document.getElementById('speedSegments');el.innerHTML='';
   segs.forEach(sg=>{
     const noData=sg.val.p50===0&&sg.val.avg===0;
-    const pct=noData?0:Math.min((sg.val.p50/maxBar)*100,100);
-    const isSlow=!noData&&(sg.target?sg.val.p50>sg.target.val:sg.val.p50>800);
     const div=document.createElement('div');div.className='speed-segment';
-    const valHtml=noData
-      ?`<div style="font-size:11px;color:var(--muted);font-style:italic">${sg.key==='remote_e2e'?'Not tracked':'No data'}</div>`
-      :`<div class="seg-val" style="color:${isSlow?'var(--yellow)':'#e8edf5'}">${sg.val.p50}ms</div>
-        <div style="font-size:9px;color:var(--muted);margin-top:2px">P50 · ${tgtLine(sg.val.p50,sg.target)}</div>`;
-    div.innerHTML=`<div class="seg-name"><strong>${sg.name}</strong><br><span style="color:var(--muted);font-size:9px">${sg.desc}</span></div>
-      <div class="seg-bar"><div class="seg-fill" style="width:${pct}%;background:${isSlow?'var(--yellow)':sg.color};opacity:${noData?0.2:1}"></div></div>
-      <div style="text-align:right;min-width:105px">${valHtml}</div>`;
+    
+    const tgtText = sg.target ? `Target &lt;${sg.target.val}ms` : '';
+    
+    const makeBox = (label, value, isP50) => {
+      const valColor = isP50 ? '#f39c12' : '#ffffff';
+      return `<div style="border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 12px; width: 100px; text-align: center; background: rgba(0,0,0,0.2);">
+        <div style="font-size: 10px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase;">${label}</div>
+        <div style="font-size: 16px; font-weight: bold; color: ${valColor}; margin-bottom: 6px;">${value}ms</div>
+        <div style="font-size: 9px; color: var(--muted); margin-top: 2px;">${tgtText}</div>
+      </div>`;
+    };
+
+    let rightSide = '';
+    if (noData) {
+      rightSide = `<div style="font-size:12px; color:var(--muted); font-style:italic; padding-right:20px;">${sg.key==='remote_e2e'?'Not tracked yet':'No data'}</div>`;
+    } else {
+      rightSide = `<div style="display: flex; gap: 10px;">
+        ${makeBox('P50', sg.val.p50, true)}
+        ${makeBox('P95', sg.val.p95, false)}
+        ${makeBox('AVG', Math.round(sg.val.avg), false)}
+        ${makeBox('STD DEV', Math.round(sg.val.stddev), false)}
+      </div>`;
+    }
+
+    const cleanDesc = sg.desc.replace(/ P50: \d+ms/,'').replace(/ This is the device round-trip itself.*/,'');
+    
+    div.innerHTML = `<div style="flex: 1; padding-right: 40px;">
+      <div style="font-size: 13px; font-weight: bold; color: #fff; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">${sg.name}</div>
+      <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">${cleanDesc}</div>
+    </div>
+    <div>${rightSide}</div>`;
     div.onclick=()=>{
       const row=(l,v)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0;white-space:nowrap">${l}</td><td>${v}</td></tr>`;
       // No-data segments: explain WHY instead of showing stats/samples that would mislead
@@ -1289,6 +1348,99 @@ function renderSpeed(d){
         }
         showModal(`Latency ${k}ms — ${b[k]} Events`,body)},
       scales:{y:{title:{display:true,text:'Event Count'},beginAtZero:true},x:{title:{display:true,text:'Latency Range (ms)'}}}}});
+
+  const speedDaily = (typeof _dailyArr !== 'undefined' && _dailyArr.length) ? _dailyArr : d.daily;
+  const dates = speedDaily.map(r => {
+    const parts = r.date.split('-');
+    return parts.length === 3 ? `${parts[2]}-${parts[1]}` : r.date;
+  });
+  function interpolateArray(arr) {
+    let lastVal = null, lastIdx = -1;
+    const res = [...arr];
+    for (let i = 0; i < res.length; i++) {
+      if (res[i] !== null) {
+        if (lastVal !== null && i - lastIdx > 1) {
+          const step = (res[i] - lastVal) / (i - lastIdx);
+          for (let j = lastIdx + 1; j < i; j++) res[j] = lastVal + step * (j - lastIdx);
+        }
+        lastVal = res[i]; lastIdx = i;
+      }
+    }
+    return res;
+  }
+  const intAvg = interpolateArray(speedDaily.map(r=>r.avg));
+  const intSd = interpolateArray(speedDaily.map(r=>r.sd));
+
+  charts.avgSdTrend = mc('avgSdTrendChart', {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [
+        {label:'Avg Speed (ms)', data:intAvg, borderColor:'#3d82f0', backgroundColor:'rgba(61,130,240,0.1)', tension:0.3, fill:false, pointRadius:3, spanGaps:true},
+        {label:'AVG + SD', data:intAvg.map((a,i)=>(a!=null&&intSd[i]!=null)?Math.round(a+intSd[i]):null), borderColor:'#1fa355', backgroundColor:'transparent', tension:0.3, fill:false, pointRadius:0, borderDash:[3,3], spanGaps:true},
+        {label:'AVG - SD', data:intAvg.map((a,i)=>(a!=null&&intSd[i]!=null)?Math.max(0,Math.round(a-intSd[i])):null), borderColor:'#e04545', backgroundColor:'transparent', tension:0.3, fill:false, pointRadius:0, borderDash:[3,3], spanGaps:true}
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          enabled: false,
+          external: function(context) {
+            let tooltipEl = document.getElementById('chartjs-tooltip-avgsd');
+            if (!tooltipEl) {
+              tooltipEl = document.createElement('div');
+              tooltipEl.id = 'chartjs-tooltip-avgsd';
+              tooltipEl.className = 'tooltip-box';
+              tooltipEl.style.pointerEvents = 'none';
+              tooltipEl.style.background = 'rgba(0,0,0,0.8)';
+              tooltipEl.style.border = 'none';
+              tooltipEl.style.overflow = 'visible';
+              document.body.appendChild(tooltipEl);
+            }
+            const tooltipModel = context.tooltip;
+            if (tooltipModel.opacity === 0) {
+              tooltipEl.style.opacity = 0;
+              return;
+            }
+            tooltipEl.style.opacity = 1;
+            
+            if (tooltipModel.body) {
+              const titleLines = tooltipModel.title || [];
+              const dataPoint = tooltipModel.dataPoints[0];
+              const avg = Math.round(dataPoint.raw);
+              const sdRaw = intSd[dataPoint.dataIndex];
+              const sdText = sdRaw != null ? `<div style="margin-top:4px; padding-left:30px">Std Dev : ${Math.round(sdRaw)} ms</div>` : '';
+              
+              tooltipEl.innerHTML = `
+                <div style="font-weight:bold; margin-bottom:6px">${titleLines[0]}</div>
+                <div style="display:flex; align-items:center; gap:6px">
+                  <div style="width:24px; height:2px; background:#3d82f0; position:relative; display:flex; align-items:center; justify-content:center">
+                     <div style="width:6px; height:6px; border-radius:50%; background:#3d82f0; border:1.5px solid var(--panel)"></div>
+                  </div>
+                  <span>Avg Speed : ${avg} ms</span>
+                </div>
+                ${sdText}
+                <div style="position:absolute; bottom:-6px; left:50%; transform:translateX(-50%); border-width:6px 6px 0 6px; border-style:solid; border-color:rgba(0,0,0,0.8) transparent transparent transparent;"></div>
+              `;
+            }
+            const position = context.chart.canvas.getBoundingClientRect();
+            tooltipEl.style.left = position.left + window.scrollX + tooltipModel.caretX + 'px';
+            tooltipEl.style.top = position.top + window.scrollY + tooltipModel.caretY + 'px';
+            tooltipEl.style.transform = 'translate(-50%, -100%)';
+            tooltipEl.style.marginTop = '-10px';
+          }
+        }
+      },
+      scales: {
+        y: { title: {display: true, text: 'Speed (ms)'}, beginAtZero: true },
+        x: { title: {display: true, text: 'Date'} }
+      }
+    }
+  });
+
 
   renderUCCards(s.per_uc);
 }
@@ -1430,100 +1582,276 @@ window.toggleDockSort=function(){
   _renderDockTable(_lastDockStats);
 };
 
-function _renderDockTable(dockStats){
-  _lastDockStats=dockStats;
-  const sorted=[...dockStats].sort((a,b)=>_dockSortAsc?(a.failure||0)-(b.failure||0):(b.failure||0)-(a.failure||0));
-  const ddt=document.getElementById('dockDetailTable');
-  if(!ddt)return;
-  ddt.innerHTML='';
-  if(sorted.length){
-    sorted.forEach(ds=>{
-      const rc2=relTag(ds.rel||0);
-      const dkCount=(ds.docklets||[]).length;
-      ddt.innerHTML+=`<tr class="clickable" onclick="showDockStatModal(${JSON.stringify(ds).replace(/"/g,'&quot;')})">
-      <td style="font-family:monospace;font-size:11px">${ds.dock_id}</td><td>${ds.total}</td>
-      <td style="color:var(--green)">${ds.success}</td>
-      <td style="color:${ds.failure>0?'var(--red)':'inherit'};font-weight:${ds.failure>0?600:400}">${ds.failure}</td>
-      <td><span class="tag ${rc2}">${ds.rel}%</span></td>
-      <td style="font-size:10px;color:var(--muted)">${dkCount} docklet${dkCount!==1?'s':''}</td></tr>`;
-    });
-  } else {
-    ddt.innerHTML='<tr><td colspan="6" style="color:var(--muted);font-size:11px;text-align:center;padding:14px">No dock press data in this period</td></tr>';
-  }
-}
-
 function renderReliability(d){
   const r=d.reliability_detail;
-  const dockStats=r.dock_stats||[];
-  const dsTot=dockStats.reduce((s,dk)=>s+dk.total,0);
-  const dsSucc=dockStats.reduce((s,dk)=>s+dk.success,0);
-  const dockRel=dsTot>0?+(100*dsSucc/dsTot).toFixed(2):(r.dock_trigger_feedback||0);
-  const relKPIEl=document.getElementById('relKPIs');
-  if(relKPIEl)relKPIEl.style.gridTemplateColumns='repeat(2,1fr)';
-  document.getElementById('relKPIs').innerHTML=`
-    <div class="kpi" onclick="showRelModal('app_trigger')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">App Trigger → Feedback<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_kpis')">ⓘ</button></div><div class="value" style="color:${relColor(r.app_trigger_feedback)}">${r.app_trigger_feedback}%</div><div class="formula-ref">= ${r.app_feedbacks||0} ÷ ${r.app_triggers||0}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px"><span class="sub" style="margin:0">Click to debug</span>${tgtLine(r.app_trigger_feedback,TARGETS.appTrigger)}</div></div>
-    <div class="kpi" onclick="showRelModal('dock_trigger')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Dock Trigger Reliability<button class="info-btn" onclick="event.stopPropagation();showInfo('rel_kpis')">ⓘ</button></div><div class="value" style="color:${relColor(dockRel)}">${dockRel}%</div><div class="formula-ref">${dsSucc} success · ${dsTot-dsSucc} failed of ${dsTot}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:3px"><span class="sub" style="margin:0">Click for breakdown</span>${tgtLine(dockRel,TARGETS.dockRel)}</div></div>`;
-
-  const srt=document.getElementById('srcRelTable');srt.innerHTML='';
-  if(r.src_rel){Object.entries(r.src_rel).forEach(([src,v])=>{
-    const rc=relTag(v.rel);const hasFails=v.fail>0;
-    srt.innerHTML+=`<tr class="clickable" onclick="showSrcRelModal('${src}',${v.total},${v.success},${v.fail},${v.rel})">
-      <td><strong>${ucLabel(src)}</strong></td><td>${v.total}</td><td style="color:var(--green)">${v.success}</td>
-      <td style="color:${hasFails?'var(--red)':'inherit'};font-weight:${hasFails?600:400}">${v.fail}</td>
-      <td><span class="tag ${rc}">${v.rel}%</span></td>
-      <td style="font-size:10px;color:var(--blue)">${hasFails?'View failures →':'No failures'}</td>
-    </tr>`})}
-
-  _renderDockTable(dockStats);
-
+  
+  // 1. Reliability Trend
   const _dArr=(_dailyArr&&_dailyArr.length)?_dailyArr:allSourceDaily(activeHub);
-  const dates=_dArr.map(r=>r.date.slice(5));
+  const dates=_dArr.map(r=>{ const p=r.date.split('-'); return p[2]+'-'+p[1]; });
+  const relTrendExtTooltip = (context) => {
+    let tooltipEl = document.getElementById('chartjs-tooltip-relTrend');
+    if (!tooltipEl) {
+      tooltipEl = document.createElement('div');
+      tooltipEl.id = 'chartjs-tooltip-relTrend';
+      tooltipEl.className = 'tooltip-box';
+      tooltipEl.style.pointerEvents = 'none';
+      tooltipEl.style.background = 'rgba(0,0,0,0.8)';
+      tooltipEl.style.border = 'none';
+      tooltipEl.style.overflow = 'visible';
+      document.body.appendChild(tooltipEl);
+    }
+    const {chart, tooltip} = context;
+    if (tooltip.opacity === 0) {
+      tooltipEl.style.opacity = 0;
+      return;
+    }
+    tooltipEl.style.opacity = 1;
+    if (tooltip.body) {
+      const val = tooltip.dataPoints[0].parsed.y;
+      tooltipEl.innerHTML = `
+        <div style="font-weight:bold; margin-bottom:6px">${tooltip.title[0]}</div>
+        <div style="display:flex; align-items:center; gap:6px">
+          <div style="width:24px; height:2px; background:#1fa355; position:relative; display:flex; align-items:center; justify-content:center">
+            <div style="width:6px; height:6px; background:#1fa355; border-radius:50%; border:1.5px solid var(--panel)"></div>
+          </div>
+          <span>Reliability %: ${val}</span>
+        </div>
+        <div style="position:absolute; bottom:-6px; left:50%; transform:translateX(-50%); border-width:6px 6px 0 6px; border-style:solid; border-color:rgba(0,0,0,0.8) transparent transparent transparent;"></div>
+      `;
+    }
+    const rect = chart.canvas.getBoundingClientRect();
+    tooltipEl.style.left = rect.left + window.scrollX + tooltip.caretX + 'px';
+    tooltipEl.style.top = rect.top + window.scrollY + tooltip.caretY + 'px';
+    tooltipEl.style.transform = 'translate(-50%, -100%)';
+    tooltipEl.style.marginTop = '-10px';
+  };
+
   charts.relTrend=mc('relTrendChart',{type:'line',data:{labels:dates,datasets:[
-    {label:'Reliability %',data:_dArr.map(r=>r.rel),borderColor:'#1fa355',tension:.3,pointRadius:3,fill:true,backgroundColor:'rgba(31,163,85,.06)'},
-    {label:'Target 97%',data:dates.map(()=>97),borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0}]},
+    {label:'Reliability percentage',data:_dArr.map(r=>r.rel),borderColor:'#1fa355',tension:.3,pointRadius:3,fill:true,backgroundColor:'rgba(31,163,85,.06)'},
+    {label:'Target %',data:dates.map(()=>97),borderColor:'rgba(220,232,248,.25)',borderDash:[5,4],borderWidth:1.5,pointRadius:0,fill:false,tension:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       onClick:(e,els)=>{if(!els.length)return;
         const day=_dArr[els[0].index];
-        openLogCenter({hub:activeHub,tab:'failures',filters:{search:day.date},context:{label:`Failures on ${day.date}`,desc:`${activeHub.toUpperCase()} · Reliability was ${day.rel}%`}});},
-      plugins:{tooltip:{filter:function(item){return item.datasetIndex===0;},callbacks:{label:function(ctx){return 'Reliability: '+ctx.parsed.y.toFixed(2)+'%'}}}},
-      scales:{y:{title:{display:true,text:'Reliability % (click to inspect failures)'},min:0,max:102},x:{title:{display:true,text:'Date'}}}}});
+        openLogCenter({hub:activeHub,tab:'failures',filters:{search:day.date},context:{label:`Failures on ${day.date}`,desc:`${activeHub.toUpperCase()} Ã‚Â· Reliability was ${day.rel}%`}});},
+      plugins:{
+        legend:{display:false},
+        tooltip:{enabled:false, external:relTrendExtTooltip}
+      },
+      scales:{y:{title:{display:true,text:'Reliability %'},min:0,max:102},x:{title:{display:true,text:'Date'}}}}});
 
-  const frt=document.getElementById('failReasonTable');frt.innerHTML='';
-  if(d.fail_by_reason){Object.entries(d.fail_by_reason).sort((a,b)=>b[1].count-a[1].count).forEach(([reason,v])=>{
-    frt.innerHTML+=`<tr class="clickable" onclick="showReasonModal('${reason}',${v.count})">
-    <td><span class="tag tag-red">${reason}</span></td><td style="font-weight:600;color:var(--red)">${v.count}</td>
-    <td style="color:var(--blue);font-size:10px">Inspect events →</td></tr>`})}
+  const srcContainer = document.getElementById('srcRelCards');
+  const mkCard = (title, rel, fail, total, target, isLast) => {
+    const isRed = rel < target;
+    const rc = isRed ? 'var(--red)' : (rel === 100 ? 'var(--green)' : 'var(--yellow)');
+    const border = isLast ? 'none' : '1px solid rgba(255,255,255,0.05)';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:${border}">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);letter-spacing:0.5px;margin-bottom:4px">${title}</div>
+        <div style="font-size:11px;color:var(--muted)">${fail} Failed &nbsp;&bull;&nbsp; ${total} Total</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:18px;font-weight:700;color:${rc};line-height:1">${rel}%</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">Target: >=${target}%</div>
+      </div>
+    </div>`;
+  };
+  
+  const appRel = r.app_trigger_feedback;
+  const appTot = r.app_triggers || 0;
+  const appFail = appTot - (r.app_feedbacks || 0);
 
-  const _FAIL_REASONS=['NO_RESPONSE','TIMEOUT','DEVICE_OFFLINE','THREAD_MESH_FAIL','DEVICE_UNAVAILABLE'];
-  const fdt=document.getElementById('failDevTable');fdt.innerHTML='';
-  if(d.fail_by_device){Object.entries(d.fail_by_device).sort((a,b)=>b[1].count-a[1].count).forEach(([dev,v])=>{
-    const reasons=Object.entries(v.reasons).map(([r,c])=>`${r}:${c}`).join(', ');
-    const rCells=_FAIL_REASONS.map(r=>{const c=v.reasons[r]||0;return`<td style="text-align:center;font-weight:${c>0?700:400};color:${c>0?'var(--red)':'var(--muted)'}">${c}</td>`;}).join('');
-    fdt.innerHTML+=`<tr class="clickable" onclick="showDevFailModal('${dev}',${v.count},'${reasons}')">
-    <td style="font-family:monospace;font-size:10px">${dev}</td>
-    <td style="font-weight:600;color:var(--red);text-align:center">${v.count}</td>
-    ${rCells}
-    <td style="font-size:10px;color:var(--blue)">Inspect →</td></tr>`})}
+  const dockStats=r.dock_stats||[];
+  const dockTot=dockStats.reduce((s,dk)=>s+dk.total,0);
+  const dockSucc=dockStats.reduce((s,dk)=>s+dk.success,0);
+  const dockFail = dockTot - dockSucc;
+  const dockRel=dockTot>0?+(100*dockSucc/dockTot).toFixed(2):(r.dock_trigger_feedback||0);
 
-  const dat=document.getElementById('devActivityTable');if(dat){
-    dat.innerHTML='';
-    if(d.devices&&d.devices.length){
-      d.devices.forEach(dev=>{
-        const rc=relTag(dev.rel);
-        const failC=dev.total-dev.success;
-        const devShort=(dev.id||'').replace('light.snap_','').replace('switch.snap_','');
-        dat.innerHTML+=`<tr class="clickable" onclick="showDevModal('${dev.id}','${dev.room}',${dev.total},${dev.rel},${dev.p50},${failC})">
-          <td style="font-size:10px;font-family:monospace">${devShort}</td>
-          <td style="font-size:11px">${dev.room}</td>
-          <td>${dev.total}</td>
-          <td><span class="tag ${rc}">${dev.rel}%</span></td>
-          <td style="color:${dev.p50>800?'var(--yellow)':'inherit'}">${dev.p50}ms</td>
-        </tr>`;
+  const autoV = r.src_rel && r.src_rel['automations'] ? r.src_rel['automations'] : {rel:100, fail:0, total:0};
+  const autoRel = autoV.rel;
+
+  const bindV = r.src_rel && r.src_rel['device_bind'] ? r.src_rel['device_bind'] : {rel:100, fail:0, total:0};
+  const bindRel = bindV.rel;
+
+  srcContainer.innerHTML = 
+    mkCard('APP CONTROL', appRel, appFail, appTot, 97, false) +
+    mkCard('DOCK CONTROL', dockRel, dockFail, dockTot, 97, false) +
+    mkCard('AUTOMATIONS', autoRel, autoV.fail, autoV.total, 97, false) +
+    mkCard('DEVICE BIND', bindRel, bindV.fail, bindV.total, 97, true);
+
+  // 3. Failures by Reason (Donut Chart)
+  if (charts.failReason) { charts.failReason.destroy(); }
+  if (d.fail_by_reason && Object.keys(d.fail_by_reason).length > 0) {
+    const sorted = Object.entries(d.fail_by_reason).sort((a,b)=>b[1].count-a[1].count);
+    const labels = sorted.map(s => s[0]);
+    const data = sorted.map(s => s[1].count);
+    
+    const palette = ['#e07a20','#d4961f','#1f7aa3','#9345e0','#4f627d'];
+    let pIdx = 0;
+    const finalColors = labels.map(label => {
+      if (label === 'DEVICE_UNAVAILABLE' || label === 'DEVICE_OFFLINE') {
+        return '#e04545'; // Explicit red
+      }
+      // If we already used all palette colors, loop around
+      return palette[pIdx++ % palette.length];
+    });
+    
+    charts.failReason = new Chart(document.getElementById('failReasonChart').getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: data,
+          backgroundColor: finalColors,
+          borderWidth: 0,
+          hoverOffset: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '70%',
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    const leg = document.getElementById('failReasonLegend');
+    leg.innerHTML = sorted.map((s, i) => {
+      const c = finalColors[i];
+      return `<div class="clickable" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:6px;background:rgba(255,255,255,0.02);border:1px solid var(--border2)" onclick="showReasonModal('${s[0]}',${s[1].count})">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c}"></span>
+          <span style="font-size:12px;color:#e8edf5;font-weight:600">${s[0]}</span>
+        </div>
+        <strong style="color:${c};font-size:14px">${s[1].count}</strong>
+      </div>`;
+    }).join('');
+  } else {
+    document.getElementById('failReasonLegend').innerHTML = '<div style="color:var(--muted);font-size:12px">No failures recorded.</div>';
+  }
+
+  // 4. Dock Reliability Table
+  const drt = document.getElementById('dockRelTable');
+  if(drt){
+    window._dockStats = dockStats.slice();
+    window.renderDockTable = function(sortMode = 'most') {
+        const stats = window._dockStats;
+        if(stats.length === 0){
+          drt.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);font-size:11px;padding:14px">No dock failures recorded</td></tr>';
+          return;
+        }
+        
+        // Hide popups
+        const p = document.getElementById('dockSortPopup');
+        if(p) p.style.display = 'none';
+        const p2 = document.getElementById('dockInfoPopup');
+        if(p2) p2.style.display = 'none';
+
+        // Update dots
+        const md = document.getElementById('sortMostDot');
+        const ld = document.getElementById('sortLeastDot');
+        if(md) md.style.background = sortMode === 'most' ? 'var(--blue)' : 'transparent';
+        if(ld) ld.style.background = sortMode === 'least' ? 'var(--blue)' : 'transparent';
+
+        drt.innerHTML = stats.sort((a,b)=> {
+            const failA = a.total - a.success;
+            const failB = b.total - b.success;
+            if (sortMode === 'most') {
+                return failB - failA;
+            } else {
+                return failA - failB;
+            }
+        }).map(dk => {
+          const dkFail = dk.total - dk.success;
+          const rel = dk.total > 0 ? +(100*dk.success/dk.total).toFixed(2) : 0;
+          const rc = relTag(rel);
+          const cvar = rc === 'tag-red' ? 'var(--red)' : (rc === 'tag-yellow' ? 'var(--yellow)' : 'var(--green)');
+          const stateText = rel < 93 ? 'Critical' : (rel < 97 ? 'Warning' : 'Healthy');
+          const stateHtml = `<div style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:9999px;font-size:11px;font-weight:600;background:rgba(0,0,0,0.3);color:${cvar};border:1px solid ${cvar};margin:0"><span style="width:7px;height:7px;border-radius:50%;background:${cvar}"></span>${stateText}</div>`;
+          return `<tr class="clickable" onclick="showDockModal('${dk.dock_id}')">
+            <td style="font-family:monospace;font-size:12px;color:var(--text);font-weight:600">${dk.dock_id}</td>
+            <td style="text-align:center;font-size:13px">${dk.total}</td>
+            <td style="text-align:center;font-weight:700;color:var(--text);font-size:13px">${dk.success}</td>
+            <td style="text-align:center;font-weight:700;color:var(--text);font-size:13px">${dkFail}</td>
+            <td style="color:${cvar};font-weight:700;font-size:13px">${rel}%</td>
+            <td>${stateHtml}</td>
+            <td><button style="background:transparent;border:1px solid var(--blue);color:var(--blue);padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;display:inline-block;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.background='var(--blue)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--blue)'">Inspect &rarr;</button></td>
+          </tr>`;
+        }).join('');
+    };
+    renderDockTable('most');
+  }
+
+  // 5. Failures by Device Table
+  window._failDevData = [];
+  if(d.devices && d.devices.length){
+    window._failDevData = d.devices
+      .filter(dev => dev.total > dev.success)
+      .map(dev => {
+        const failC = dev.total - dev.success;
+        const reasons = (d.fail_by_device && d.fail_by_device[dev.id]) ? d.fail_by_device[dev.id].reasons : {};
+        return { ...dev, failC, reasons };
+      })
+      .sort((a,b) => {
+        if (a.rel !== b.rel) return a.rel - b.rel;
+        return b.failC - a.failC;
       });
-    } else {
-      dat.innerHTML='<tr><td colspan="5" style="color:var(--muted);font-size:11px;text-align:center;padding:14px">No device data yet</td></tr>';
+  }
+  window._failDevLimit = 5;
+  renderFailDevTable();
+}
+
+window._failDevSortDir = 'most';
+window.renderFailDevTable = function(sortMode) {
+  if (sortMode) {
+    window._failDevSortDir = sortMode;
+    const ov = document.getElementById('failSortOverlay');
+    const po = document.getElementById('failSortPopup');
+    if(ov) ov.style.display = 'none';
+    if(po) po.style.display = 'none';
+    
+    const mostDot = document.getElementById('failSortMostDot');
+    const leastDot = document.getElementById('failSortLeastDot');
+    if(mostDot && leastDot) {
+      mostDot.style.background = sortMode === 'most' ? 'var(--blue)' : 'transparent';
+      leastDot.style.background = sortMode === 'least' ? 'var(--blue)' : 'transparent';
     }
   }
+
+  const fdt = document.getElementById('failDevTable');
+  if(!fdt) return;
+  
+  if(!window._failDevData || window._failDevData.length === 0){
+    fdt.innerHTML = '<tr><td colspan="9" style="color:var(--muted);font-size:11px;text-align:center;padding:14px">No device failures recorded</td></tr>';
+    return;
+  }
+  
+  const sorted = window._failDevData.slice().sort((a, b) => {
+    return window._failDevSortDir === 'most' ? (b.failC - a.failC) : (a.failC - b.failC);
+  });
+  
+  fdt.innerHTML = sorted.map(dev => {
+    const rc = relTag(dev.rel);
+    const cvar = rc === 'tag-red' ? 'var(--red)' : (rc === 'tag-yellow' ? 'var(--yellow)' : 'var(--green)');
+    const devShort = (dev.id||'').replace('light.snap_','').replace('switch.snap_','');
+    
+    const nr = dev.reasons['NO_RESPONSE'] || 0;
+    const to = dev.reasons['TIMEOUT'] || 0;
+    const doff = dev.reasons['DEVICE_OFFLINE'] || 0;
+    const dun = dev.reasons['DEVICE_UNAVAILABLE'] || 0;
+    const tmf = dev.reasons['THREAD_MESH_FAIL'] || 0;
+    
+    return `<tr class="clickable" onclick="showDevModal('${dev.id}','${dev.room}',${dev.total},${dev.rel},${dev.p50},${dev.failC})">
+      <td style="font-family:monospace;font-size:12px;color:var(--text);font-weight:600">${devShort}</td>
+      <td style="color:${cvar};font-weight:700;font-size:13px;text-align:center">${dev.rel}%</td>
+      <td style="text-align:center;font-weight:700;color:var(--red);font-size:13px">${dev.failC}</td>
+      <td style="text-align:center;font-size:13px">${nr}</td>
+      <td style="text-align:center;font-size:13px">${to}</td>
+      <td style="text-align:center;font-size:13px">${doff}</td>
+      <td style="text-align:center;font-size:13px">${dun}</td>
+      <td style="text-align:center;font-size:13px">${tmf}</td>
+      <td><button style="background:transparent;border:1px solid var(--blue);color:var(--blue);padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;display:inline-block;transition:all 0.2s;white-space:nowrap;" onmouseover="this.style.background='var(--blue)';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='var(--blue)'">Inspect &rarr;</button></td>
+    </tr>`;
+  }).join('');
 }
 
 window.showSrcRelModal=function(src,total,success,fail,rel){
@@ -1711,66 +2039,239 @@ function renderUsage(d){
     <div class="kpi" onclick="showUsageModal('ha_ui')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Direct HA-UI Control<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_ha_ui')">ⓘ</button></div><div class="value">${u.direct_ha_ui_total||0}</div><div class="formula-ref">= ${u.direct_ha_ui_per_day||0}/day · new metric</div><div class="sub">Click for breakdown</div></div>`;
   const hubSA=((u.hub_scene_total||0)+(u.hub_auto_total||0));
   const srcLabels=['App (Local)','Remote App','Dock Control','Hub (Scene/Auto)'];
-  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,hubSA],backgroundColor:['#3d82f0','#7a5dcf','#1fa355','#d4961f'],borderWidth:0}]},
+  charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,hubSA],backgroundColor:['#3d82f0','#1fa355','#d4961f','#9d65c9'],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
       onClick:(e,els)=>{if(!els.length)return;
         const src=srcLabels[els[0].index];
         openLogCenter({hub:activeHub,tab:'all',srcFilter:src,context:{label:`${src} Events`,desc:`${activeHub.toUpperCase()} · all events from this source`}});},
-      plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
+      plugins:{legend:{display:false},
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                let v = ctx.parsed;
+                let total = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b, 0);
+                let pct = total > 0 ? ((v/total)*100).toFixed(1) : 0;
+                return ` Events: ${v} | Percentage: ${pct}%`;
+              }
+            }
+          }}}});
 
-  // Dock usage panel — populated when dock_table is connected
-  const dockUsageEl=document.getElementById('dockUsagePanel');
-  if(dockUsageEl){
-    // Dock USAGE breakdown — from dock_logs (action-type counts). Reliability lives
-    // on the Reliability tab and is computed from ha_logs (the real source).
-    const du=d.dock_usage||{by_action:{},by_docklet:{},total:0};
-    const byAction=du.by_action||{};
-    const actionRows=Object.entries(byAction).sort((a,b)=>b[1]-a[1]);
-    const activeDocklets=Object.keys(du.by_docklet||{}).length;
-    dockUsageEl.style.display='';
-    if(du.total){
-      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 4px;display:flex;justify-content:space-between;align-items:center">Dock Usage<button class="info-btn" onclick="event.stopPropagation();showInfo('dock_usage')">ⓘ</button></h3>
-      <p style="font-size:10px;color:var(--muted);margin-bottom:10px">Action-type usage from dock_logs · reliability is on the Reliability tab (from ha_logs)</p>
-      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-        <div class="kpi" style="flex:1;min-width:120px"><div class="label">Total Dock Actions</div><div class="value">${du.total}</div></div>
-        <div class="kpi" style="flex:1;min-width:120px"><div class="label">Active Docklets</div><div class="value">${activeDocklets}</div></div>
-      </div>
-      <table style="font-size:11px;width:100%"><thead><tr>
-        <th style="text-align:left;padding:4px 8px">Action Type</th><th style="text-align:right;padding:4px 8px">Count</th><th style="text-align:right;padding:4px 8px">Share</th>
-      </tr></thead><tbody>
-      ${actionRows.map(([act,cnt])=>`<tr>
-        <td style="font-family:monospace;font-size:11px;padding:4px 8px">${act}</td>
-        <td style="text-align:right;padding:4px 8px;font-weight:600">${cnt}</td>
-        <td style="text-align:right;padding:4px 8px;color:var(--muted)">${du.total?((cnt/du.total)*100).toFixed(1):0}%</td>
-      </tr>`).join('')}
-      </tbody></table>`;
+  const dock_usage = d.dock_usage || { total: 0, by_action: {} };
+  const totalDockEvents = dock_usage.total;
+  
+  const allEvs = buildEventPool(activeHub);
+  const dockEvs = allEvs.filter(e => e.src === 'docklet');
+  const uniqueDocks = new Set(dockEvs.map(e => e.dock).filter(x => x && x !== '-')).size;
+  const uniqueDocklets = new Set(dockEvs.map(e => e.dev).filter(x => x && x !== '-')).size;
+  
+  let toggleCnt = 0;
+  let incCnt = 0;
+  let decCnt = 0;
+  for (const [k, v] of Object.entries(dock_usage.by_action)) {
+    const a = (k || '').toLowerCase();
+    if(a.includes('toggle')) toggleCnt += v;
+    else if(a.includes('inc')) incCnt += v;
+    else if(a.includes('dec')) decCnt += v;
+  }
+
+  const dockUsagePanel = document.getElementById('dockUsagePanel');
+  if (dockUsagePanel) {
+    if (totalDockEvents > 0) {
+      dockUsagePanel.style.display = 'block';
+      dockUsagePanel.style.padding = '16px';
+      dockUsagePanel.innerHTML = `
+        <div style="font-size:12px;font-weight:700;color:#fff;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+          DOCK USAGE
+          <button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo('dock_usage')">
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          </button>
+        </div>
+        <hr style="border:0;border-top:1px solid var(--border);margin:0 0 16px 0">
+        
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-bottom:16px;">
+          <div class="kpi" style="padding:16px;text-align:center;margin-bottom:0;cursor:default;background:rgba(0,0,0,0.25)">
+            <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px">TOTAL DOCK EVENTS</div>
+            <div style="font-size:24px;font-weight:700">${totalDockEvents}</div>
+          </div>
+          <div class="kpi" style="padding:16px;text-align:center;margin-bottom:0;cursor:default;background:rgba(0,0,0,0.25)">
+            <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px">TOTAL DOCKS</div>
+            <div style="font-size:24px;font-weight:700">${uniqueDocks}</div>
+          </div>
+          <div class="kpi" style="padding:16px;text-align:center;margin-bottom:0;cursor:default;background:rgba(0,0,0,0.25)">
+            <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px">ACTIVE DOCKLETS</div>
+            <div style="font-size:24px;font-weight:700">${uniqueDocklets}</div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+          <div class="kpi" style="padding:16px;margin-bottom:0;cursor:default">
+            <div style="font-size:12px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between">
+              <span>ACTION TYPE</span><span>COUNT</span>
+            </div>
+            <hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="width:10px;height:10px;background:#3d82f0;border-radius:2px"></div>Toggle</div>
+              <strong>${toggleCnt}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="width:10px;height:10px;background:#1fa355;border-radius:2px"></div>Increment</div>
+              <strong>${incCnt}</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="width:10px;height:10px;background:#e04545;border-radius:2px"></div>Decrement</div>
+              <strong>${decCnt}</strong>
+            </div>
+          </div>
+          <div class="kpi" style="padding:16px;margin-bottom:0;cursor:default;display:flex;align-items:center;justify-content:center">
+            <div class="chart-box" style="height:120px;width:100%;position:relative"><canvas id="dockActionChart"></canvas></div>
+          </div>
+        </div>
+      `;
+      
+      setTimeout(() => {
+        if(charts.dockAction) charts.dockAction.destroy();
+        const ctx = document.getElementById('dockActionChart');
+        if(ctx) {
+          charts.dockAction = mc('dockActionChart', {
+            type: 'pie',
+            data: {
+              labels: ['Toggle', 'Increment', 'Decrement'],
+              datasets: [{
+                data: [toggleCnt, incCnt, decCnt],
+                backgroundColor: ['#3d82f0', '#1fa355', '#e04545'],
+                borderWidth: 0
+              }]
+            },
+            options: { 
+              responsive: true, 
+              maintainAspectRatio: false, 
+              plugins: { 
+                legend: { position: 'right', labels: { color: 'rgba(255,255,255,0.7)', font: { size: 10 } } },
+                tooltip: { callbacks: { label: (c) => ` ${c.label}: ${c.raw}` } }
+              } 
+            }
+          });
+        }
+      }, 0);
     } else {
-      dockUsageEl.innerHTML=`<h3 style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px;display:flex;justify-content:space-between;align-items:center">Dock Usage<button class="info-btn" onclick="event.stopPropagation();showInfo('dock_usage')">ⓘ</button></h3>
-      <p style="font-size:11px;color:var(--muted)">No dock_logs usage records in this period. Dock reliability (from ha_logs) is on the Reliability tab.</p>`;
+      dockUsagePanel.style.display = 'none';
     }
   }
-}
 
-window.showDevModal=function(id,room,total,rel,p50,fail){
-  const hub=activeHub;
-  const fails=failuresFor(hub,f=>f.dev===id);
-  const lcOpts={hub,tab:'failures',filters:{search:id.replace('light.snap_','').replace('switch.snap_','')},context:{label:`Device Failures — ${id}`,desc:`${fail} failures`}};
-  const row=(l,v)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0">${l}</td><td>${v}</td></tr>`;
-  let body=`<table style="font-size:12px;margin-bottom:4px">
-    ${row('Device',`<strong style="font-family:monospace">${id}</strong>`)}${row('Room',room)}
-    ${row('Total Events',total)}${row('Reliability',`<strong style="color:${relColor(rel)};font-size:16px">${rel}%</strong>`)}
-    ${row('P50 Latency',`<span style="color:${p50>800?'var(--yellow)':'#e8edf5'}">${p50}ms</span>`)}
-    ${row('Failures',`<strong style="color:var(--red);font-size:16px">${fail}</strong>`)}
-  </table>`;
-  if(fail>0){
-    body+=`<div class="dbg-section">
-      <div class="dbg-section-hdr">
-        <span class="dbg-section-title">Failure Events (${fails.length})</span>
-        <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View in Log Center →</button>
-      </div>
-      ${evTable(fails.slice(0,8),[{key:'ts',label:'Time'},{key:'uc',label:'UC'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}])}
-    </div>`;
-  } else {
+        // Usage Trend Chart
+        const ds = (_dailyArr&&_dailyArr.length)?_dailyArr:allSourceDaily(activeHub);
+    if(charts.usageTrend) charts.usageTrend.destroy();
+    
+    const usageTrendExtTooltip = (context) => {
+      let tooltipEl = document.getElementById('chartjs-tooltip-usageTrend');
+      if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'chartjs-tooltip-usageTrend';
+        tooltipEl.className = 'tooltip-box';
+        tooltipEl.style.pointerEvents = 'none';
+        tooltipEl.style.background = 'rgba(0,0,0,0.8)';
+        tooltipEl.style.border = 'none';
+        tooltipEl.style.overflow = 'visible';
+        document.body.appendChild(tooltipEl);
+      }
+      const {chart, tooltip} = context;
+      if (tooltip.opacity === 0) {
+        tooltipEl.style.opacity = 0;
+        return;
+      }
+      tooltipEl.style.opacity = 1;
+      if (tooltip.body) {
+        const title = tooltip.title[0] || '';
+        let innerHtml = `<div style="font-weight:bold; margin-bottom:6px"></div>`;
+        const colors = {'HUB':'#9d65c9','APP':'#3d82f0','DOCK':'#d4961f'};
+        
+        let total = 0;
+        tooltip.dataPoints.forEach(dp => total += dp.parsed.y);
+
+        tooltip.dataPoints.forEach(dp => {
+          const lbl = dp.dataset.label;
+          const val = dp.parsed.y;
+          const c = colors[lbl] || '#fff';
+          let pct = total > 0 ? ((val/total)*100).toFixed(1) : 0;
+          innerHtml += `
+            <div style="margin-bottom:6px">
+              <div style="display:flex; align-items:center; gap:6px; margin-bottom:2px; font-size:12px; font-weight:bold">
+                <div style="width:10px; height:10px; background:${c};"></div> ${lbl}
+              </div>
+              <div style="font-size:11px; color:var(--muted); padding-left:16px">Events: ${val}, Percentage: ${pct}%</div>
+            </div>
+          `;
+        });
+        innerHtml += `<div style="position:absolute; bottom:-6px; left:50%; transform:translateX(-50%); border-width:6px 6px 0 6px; border-style:solid; border-color:rgba(0,0,0,0.8) transparent transparent transparent;"></div>`;
+        tooltipEl.innerHTML = innerHtml;
+      }
+      const rect = chart.canvas.getBoundingClientRect();
+      tooltipEl.style.left = rect.left + window.scrollX + tooltip.caretX + 'px';
+      tooltipEl.style.top = rect.top + window.scrollY + tooltip.caretY + 'px';
+      tooltipEl.style.transform = 'translate(-50%, -100%)';
+      tooltipEl.style.marginTop = '-10px';
+    };
+
+    const trendLabels = ds.map(x=>{ const p = x.date.split('-'); return p[2]+'-'+p[1]; });
+    const trendHub = ds.map(x=>(x.hub||0));
+    const trendApp = ds.map(x=>(x.app||0));
+    const trendDock = ds.map(x=>(x.dock||0));
+    charts.usageTrend = mc('usageTrendChart',{
+      type:'bar',
+      data:{
+        labels:trendLabels,
+        datasets:[
+          {label:'HUB',data:trendHub,backgroundColor:'#9d65c9',},
+          {label:'APP',data:trendApp,backgroundColor:'#3d82f0',},
+          {label:'DOCK',data:trendDock,backgroundColor:'#d4961f',}
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        scales:{x:{title:{display:true,text:'Date'},stacked:true,grid:{display:false}},y:{title:{display:true,text:'Events'},stacked:true,grid:{color:'rgba(255,255,255,0.05)'}}},
+        plugins:{
+          legend:{display:false},
+          tooltip:{enabled:false, mode:'index', intersect:false, external:usageTrendExtTooltip}
+        }
+      }
+    });
+
+    // ACTIVE SNAP DEVICES
+    const snapBtn = document.getElementById('activeSnapBtn');
+    if(snapBtn) {
+      snapBtn.innerHTML = `ACTIVE SNAP DEVICES - ${u.snap_devices||0}<button class="info-btn" style="border:none;background:none;padding:0;margin-left:6px" onclick="event.stopPropagation();showInfo(\'usage_snap_devices\')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button>`;
+      snapBtn.onmouseover = () => snapBtn.style.background = 'rgba(255,255,255,0.1)';
+      snapBtn.onmouseout = () => snapBtn.style.background = 'transparent';
+      snapBtn.style.transition = 'background 0.2s';
+      snapBtn.onclick = () => showInfo('usage_snap_devices');
+    }
+
+    // 5 KPI CARDS
+    const kpisEl = document.getElementById('usageKPIs');
+    if(kpisEl) {
+      kpisEl.innerHTML = `
+        <div class="kpi" style="padding:16px;cursor:pointer" onclick="showUsageModal('auto')">
+          <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">AUTOMATION / DAY<button class="info-btn" style="border:none;background:none;padding:0;margin-left:4px" onclick="event.stopPropagation();showInfo('usage_auto')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></div><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+          <div style="font-size:24px;font-weight:700">${u.hub_auto_per_day||0}</div>
+        </div>
+        <div class="kpi" style="padding:16px;cursor:pointer" onclick="showUsageModal('scene')">
+          <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">SCENE / DAY<button class="info-btn" style="border:none;background:none;padding:0;margin-left:4px" onclick="event.stopPropagation();showInfo('usage_scene')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></div><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+          <div style="font-size:24px;font-weight:700">${u.hub_scene_per_day||0}</div>
+        </div>
+        <div class="kpi" style="padding:16px;cursor:pointer" onclick="showUsageModal('app')">
+          <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">APP USAGE RATIO<button class="info-btn" style="border:none;background:none;padding:0;margin-left:4px" onclick="event.stopPropagation();showInfo('usage_app')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></div><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+          <div style="font-size:24px;font-weight:700">${u.app_ratio||0}%</div>
+        </div>
+        <div class="kpi" style="padding:16px;cursor:pointer" onclick="showUsageModal('dock')">
+          <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">DOCK USAGE RATIO<button class="info-btn" style="border:none;background:none;padding:0;margin-left:4px" onclick="event.stopPropagation();showInfo('usage_dock')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></div><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+          <div style="font-size:24px;font-weight:700">${u.dock_ratio||0}%</div>
+        </div>
+        <div class="kpi" style="padding:16px;cursor:pointer" onclick="showUsageModal('ha_ui')">
+          <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">DIRECT HA - UI CONTROL<button class="info-btn" style="border:none;background:none;padding:0;margin-left:4px" onclick="event.stopPropagation();showInfo('usage_ha_ui')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></div><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+          <div style="font-size:24px;font-weight:700">${u.direct_ha_ui_total||0}</div>
+        </div>
+      `;
+    } else {
     body+=`<div class="dbg-section"><div class="dbg-empty">No failures recorded for this device.</div></div>`;
   }
   showModal(id,body);
@@ -2226,6 +2727,9 @@ window.showHubListModal=function(){
 
 window.showInfo=function(key){
   const INFO={
+    overall_usage:{title:'OVERALL USAGE',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Shows the total proportion of commands originating from each source.\n\n  HUB (Automations / Scenes): Commands triggered automatically by the hub.\n  APP (Local): Commands from the app while on the same Wi-Fi network.\n  DOCK: Commands from physical dock button presses.\n  APP (Remote): Commands from the app while away from home.\n\nAnalyze this chart to understand how users interact with the system.'},
+    usage_trend:{title:'USAGE TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Provides a daily breakdown of system interactions across all control sources.\n\n  HUB: Commands executed automatically via automations and scenes.\n  APP: Manual interactions initiated through the mobile app (Local & Remote).\n  DOCK: Physical interactions via dock button presses.\n\nMonitor these trends over time to understand user behavior. A steady shift away from manual App usage towards Hub and Dock controls often indicates a well-automated, highly optimized smart home environment.'},
+dock_usage:{title:'DOCK USAGE',body:'<hr style=\"border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0\">Detailed breakdown of physical dock interactions.<br><br><b>Total Dock Events</b>: The total number of button presses recorded.<br><b>Total Docks</b>: The number of unique dock hubs sending commands.<br><b>Active Docklets</b>: The number of individual docklet buttons pressed.<br><br><b>Action Types</b>: Shows how users are utilizing the buttons (toggling states vs adjusting brightness/volume).'},
     fleet_total:{title:'TOTAL EVENTS',body:'The total number of commands successfully processed across the entire system. This count includes all actions originating from the APP + DOCK + HUB.'},
     fleet_reliability:{title:'RELIABILITY',body:'Measures the percentage of commands successfully executed by the system out of all commands attempted.\n\n<b>Formula:</b> (Successful Commands / Total Attempted Commands) × 100\n\n<b>Ranges:</b>\n• Good: > 97%\n• Acceptable: 95% - 97%\n• Bad: < 95%'},
     fleet_latency:{title:'AVG P50 SPEED',body:'The median response time for commands. Exactly half of all commands are processed faster than this speed, providing a realistic view of typical system performance.\n\n<b>Formula:</b> The 50th percentile value of all end-to-end command execution times.\n\n<b>Ranges:</b>\n• Good: < 800ms\n• Acceptable: 800ms - 1000ms\n• Bad: > 1000ms'},
@@ -2235,30 +2739,31 @@ window.showInfo=function(key){
     hub_latency:{title:'P50 SPEED',body:'The median response time for commands. Exactly half of all commands are processed faster than this speed, providing a realistic view of typical system performance.\n\n<b>Formula:</b> The 50th percentile value of all end-to-end command execution times.\n\n<b>Ranges:</b>\n• Good: < 800ms\n• Acceptable: 800ms - 1000ms\n• Bad: > 1000ms'},
     hub_failures:{title:'FAILURES',body:'The total number of commands that failed to complete on this hub. In our context, a failure means the system could not successfully execute a command.\n\nThis total includes:\n• App Failures: Commands sent from the user app that failed\n• Dock Failures: Physical docklet presses that failed\n• Hub Failures: Automated scene or schedule executions from the hub that failed'},
     daily_chart:{title:'DAILY EVENTS & RELIABILITY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">A day-by-day breakdown of system activity and its success rate.\n\n• Hub Events (Violet): Automated actions from the hub (scenes/schedules).\n• App Events (Blue): Manual controls from the user app.\n• Dock Events (Orange): Physical dock button presses.\n• Reliability % (Green Dotted Line): Percentage of total commands that successfully executed.\n• Target % (Grey Dotted Line): The 97% reliability is the goal.\n\nA dip in the green line indicates system issues on that day.'},
-    p50_chart:{title:'P50 SPEED TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Tracks the median response time (P50) of system commands over time.\n\n• P50 Speed (ms) (Orange Line with Dot): The median speed of commands for that day.\n• Target (ms) (Grey Dotted Line): The target response time (<1000ms).\n\nIf the orange line spikes above the target line, it indicates the system was abnormally slow on that day, and you should investigate the slow events.'},
+    p50_chart:{title:'P50 & P95 SPEED TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Tracks the median (P50) and worst-case (P95) response times of system commands over time.\n\n  P50 Speed (ms) (Orange Line with Dot): The median speed of commands for that day.\n  P95 Speed (ms) (Red Line with Dot): The worst-case response time where 95% of all commands finished faster than this value.\n  Target (ms) (Grey Dotted Line): The target response time (<1000ms).\n\nIf the red or orange lines spike above the target line, it indicates the system was abnormally slow on that day.'},
     ns_chart:{title:'NORTH STAR TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Tracks the percentage of commands that completed almost instantly (under 1 second) over time.\n\n• North Star % (Blue Line with Dot): The percentage of lightning-fast commands for that day.\n• Target % (Grey Dotted Line): The baseline goal of 95%.\n\nDrops in the blue line usually indicate temporary network congestion, a struggling device, or Thread mesh instability. Investigating these dips helps maintain a flawless user experience.'},
     fail_trend_chart:{title:'FAILURES TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Breaks down exactly which commands failed each day across the system.\n\n• Hub Failures (Violet): Failures from automated hub scenes and schedules.\n• App Failures (Red): Failures from manual controls via the user app.\n• Dock Failures (Orange): Failures from physical dock button presses.\n\nMonitor this graph to easily identify if a spike in unreliability is caused by a specific source (e.g., dock commands failing constantly).'},
     heatmap:{title:'ACTIVITY HEATMAP',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Shows when devices are controlled most across the entire week.\n\n• Dark Blue: High volume of commands during this hour.\n• Light/Black: Low or no activity during this hour.\n\nAnalyze this grid to spot usage patterns, like most activity happening on weekday evenings. Click any cell to jump into the Log Center and inspect those specific events.'},
     heatmap_fail:{title:'FAILURES HEATMAP',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Shows when system failures happen most across the entire week.\n\n• Dark Red: High volume of failures during this hour.\n• Light/Black: Low or no failures during this hour.\n\nAnalyze this grid to spot recurring failure patterns. A cell glowing red at the same time every day points to environmental interference, router reboots, or scheduled congestion. Click any cell to jump into the Log Center and inspect those specific failures.'},
-    speed_segments:{title:'Speed Segments',body:'Breaks down where time is actually spent when a command is sent. There are 4 stages:\n\n• Hub→SNAP→Hub: How long for the hub to command the physical device and get state confirmed back\n• Hub→App: How long for the hub to push the new state to the phone via WebSocket\n• App Control (Local): Full round trip when the user is on the same Wi-Fi as the hub\n• App Control (Remote): Full round trip when controlling from outside the home\n\nClick any row for event-level detail.'},
-    lat_dist:{title:'Latency Distribution',body:'How many commands fell into each speed bucket:\n\n• Green (<500ms): Fast — feels instant\n• Yellow (500ms–1s): Acceptable\n• Orange (1–2s): Getting slow\n• Red (2–5s): Noticeably sluggish\n• Deep Red (>5s): Very slow — investigate\n\nA healthy system has the vast majority of events in the green bucket. Click any bar to see the actual events in that range.'},
+    avg_sd_trend:{title:'AVG & SD TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Visualizes the daily average speed and its standard deviation across the entire system.\n\n  Avg Speed (ms) (Blue line with dot): The mean response time of all commands on that day.\n  AVG + SD (Green Dotted Line): The upper boundary of typical response times.\n  AVG - SD (Red Dotted Line): The lower boundary of typical response times.\n\nA narrow gap between the green and red lines indicates highly consistent performance. A wide gap means speed is erratic and unpredictable. Spikes in the blue line point to specific days where the overall system slowed down.'},
+    speed_segments:{title:'SPEED SEGMENTS',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Breaks down where time is actually spent when a command is sent. There are 4 roundtrips:\n\n  Hub &rarr; SNAP &rarr; Hub: How long for the hub to command the physical device and get state confirmed back.\n  Hub &rarr; App (WebSocket Push): How long for the hub to push the new state to the phone via WebSocket.\n  App Control (Local): Full round trip when the user is on the same Wi-Fi as the hub.\n  App Control (Remote): Full round trip when controlling from outside the home.\n\nCompare these segments to identify bottlenecks. If App Control is slow but Hub &rarr; SNAP is fast, the delay is in the network or WebSocket connection.'},
+    lat_dist:{title:'SPEED DISTRIBUTION',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">How many commands fell into each speed bucket:\n\n  Green (<500ms): Fast & feels instant\n  Yellow (500ms-1s): Acceptable\n  Orange (1-2s): Getting slow\n  Red (2-5s): Noticeably sluggish\n  Deep Red (>5s): Very slow & investigate\n\nA healthy system has the vast majority of events in the green bucket.\nClick any bar to see the actual events in that range.'},
     uc_lat:{title:'Latency by Use Case',body:'Compares speed across the different ways devices can be controlled:\n\n• App Control: User tapped the phone app on local Wi-Fi\n• Dock Control: Physical dock button was pressed\n• Remote App: User controlled from outside the home\n• Observed Change: State change detected by the hub (e.g. manual switch)\n\nShows Avg, P50 (typical), and P95 (worst-case). Useful for spotting if one control method is consistently slower.'},
     uc_table:{title:'Per Use Case Speed',body:'Detailed latency numbers for each control method. The most important column is P95 — it represents the slowest 5% of commands, your worst-case user experience. P95 above 1 second is flagged as Critical and should be investigated. Click any row for event-level detail.'},
     uc_speed_metrics:{title:'Speed Metrics Explained',body:'Every use-case card shows four numbers:\n\n• Avg — The simple average of all command times. Easy to read but one very slow event can pull it up and make things look worse than they are.\n\n• P50 (Median) — Sort all command times; P50 is the middle value. Half finished faster, half slower. This is what a typical user actually experiences day-to-day.\n\n• P95 — 95% of commands finished faster than this number. Only the slowest 5% were slower. This is your worst-case experience — if P95 is under 1000ms, even your slowest users are getting a decent experience.\n\n• Std Dev (Standard Deviation) — Measures how consistent the times are. A low number means most commands take a similar amount of time (predictable). A high number means some are fast and some are very slow (erratic). Green under 200ms · Yellow 200–500ms · Red above 500ms.'},
     rel_kpis:{title:'Reliability KPIs',body:'Two ways of measuring how reliably commands are confirmed:\n\n• App Trigger Feedback: When a user taps in the app, does the app receive confirmation that the command worked? This is the most direct measure of app-facing reliability.\n• Dock Trigger Reliability: When a physical dock button is pressed, does the bound device actually activate? Computed from hub logs (ha_logs) — the reliable, always-on source.\n\nClick either card to debug failures for that source.'},
-    src_rel:{title:'Per-Source Reliability',body:'Reliability broken down by how the device was controlled — App, Remote App, Dock Control, or Observed Change. Lets you pinpoint whether one control method is failing more than others.\n\nIf App Control is 99% but Dock Control is 85%, the issue is specific to dock hardware or Thread mesh coverage near those docks. Click any row to see its failure events.'},
-    rel_trend:{title:'Reliability Trend',body:'How reliability changed over the selected period. A sustained drop indicates a persistent problem. A one-day spike usually points to a temporary event like a power outage or network hiccup.\n\nClick any point to jump directly to the Log Center filtered to that day\'s failures.'},
-    dock_rel:{title:'Dock Reliability',body:'Reliability per physical dock device, computed from hub logs (ha_logs) — the reliable, always-on source. A docklet press is a hub-recorded command; it succeeds when the bound SNAP device actually reached a real state (on/off), and fails when it did not respond. Each row shows one dock — how many presses succeeded versus failed.\n\nClick any row to see a per-docklet breakdown (which specific button assignments are failing).'},
-    fail_reason:{title:'Failures by Reason',body:'Groups all failures by what went wrong:\n\n• TIMEOUT: Command reached the hub but the device didn\'t respond in time\n• DEVICE_OFFLINE: Device wasn\'t reachable when the command was sent\n• NO_RESPONSE: Hub got no acknowledgement from the device\n• THREAD_MESH_FAIL: The wireless mesh dropped the packet before reaching the device\n\nClick any reason to see which devices and rooms are affected.'},
-    fail_device:{title:'Failures by Device',body:'Which individual lights or switches are failing the most. If one device appears here consistently, it likely needs attention — check Thread mesh coverage near it, verify the device is powered, or check if a firmware update is available.\n\nClick any row to inspect the failure events for that specific device.'},
-    usage_auto:{title:'Automation / Day',body:'How many automation runs happened per day on average, counted from the hub\'s own logs (ha_logs automation_triggered events).\n\nThe hub records every automation run — even when the app is closed — so this is the reliable source. The app\'s own observed counts are not used for this tile because the app only records while it is open, which makes them inconsistent.\n\nClick the tile to see the hub-recorded runs in the Log Center (shown as "Automation Run (Hub)").'},
-    usage_scene:{title:'Scene / Day',body:'How many scene activations happened per day on average, counted from the hub\'s own logs (ha_logs scene call_service events). A scene is a preset group of device states — for example, "Meeting Mode" sets multiple lights to a specific configuration in one tap.\n\nThe hub records every activation — even when the app is closed — so this is the reliable source. The app\'s own observed counts are not used for this tile: the app only records while it is open and can log state-refresh bursts as false activations.\n\nClick the tile to see the hub-recorded activations in the Log Center (shown as "Scene Activated (Hub)").'},
-    usage_snap_devices:{title:'Active SNAP Devices',body:'The count of distinct physical SNAP-connected devices that had at least one command in this period.\n\nOnly counts real physical hardware:\n• light.* — SNAP-connected lights\n• switch.* — SNAP-connected switches\n• fan.* — SNAP-connected fans\n\nExcludes virtual entities like scene.*, automation.*, script.*, and group.* which are logical constructs, not physical devices.'},
-    usage_app:{title:'App Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from someone tapping the phone app? A high app ratio means users prefer the app over physical dock buttons.\n\nUseful for understanding how the system is actually being used day-to-day and whether dock hardware is being adopted.'},
-    usage_dock:{title:'Dock Usage Ratio',body:'Of all manual controls (app + dock combined), what percentage came from pressing a physical dock button? A high dock ratio means users find the physical interface more natural or convenient than the app.'},
-    usage_ha_ui:{title:'Direct HA-UI Control',body:'Commands sent directly from the hub\'s own Home Assistant screen — not the mobile app, not a dock, not an automation, not a scene.\n\nThis used to be impossible to count: an app-relayed command and a hub-screen command looked identical to the hub. It\'s resolved now by checking whether the app itself has a matching record of starting that exact action (via a shared trigger id) — if it doesn\'t, and it isn\'t an automation, scene, or dock press, the hub\'s own UI is the only thing left that could have done it.\n\nThis is a new metric — it only counts events recorded after this capability was added, and it isn\'t folded into Total Events or Reliability yet while it\'s validated against more real-world usage.'},
+    rel_source:{title:'RELIABILITY BY SOURCE',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Reliability broken down by how the device was controlled.\n\n  APP CONTROL: Commands sent from the mobile app.\n  DOCK CONTROL: Commands triggered by pressing a physical dock button.\n  AUTOMATIONS: Commands triggered automatically by hub scenes or schedules.\n  DEVICE BIND: The process of pairing and adding new devices to the system.\n\nIt pinpoints whether one control method is failing more than others.'},
+    rel_trend:{title:'RELIABILITY TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">How reliability changed over the selected period across the entire system.\n\n  Reliability percentage (Green line with dot): The daily success rate of all commands.\n  Target % (Dashed Line): The minimum acceptable reliability target.\n\nA sustained drop indicates a persistent problem. A one-day drop usually points to a temporary event like a power outage or network hiccup. Click any point to jump directly to the Log Center filtered to that day\'s failures.'},
+    dock_rel:{title:'DOCK RELIABILITY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Reliability per physical dock device, computed from hub logs.\n\nA docklet press is a hub-recorded command; it succeeds when the bound SNAP device actually reached a real state (on/off), and fails when it did not respond.\n\nEach row shows one dock, how many presses succeeded versus failed.'},
+    fail_reason:{title:'FAILURES BY REASON',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Groups all system failures by their root cause.\n\n  TIMEOUT: Command reached the hub but the device didn\'t respond in time.\n  DEVICE_OFFLINE: Device wasn\'t reachable when the command was sent.\n  NO_RESPONSE: Hub got no acknowledgement from the device.\n  THREAD_MESH_FAIL: The wireless mesh dropped the packet before reaching the device.\n  DEVICE_UNAVAILABLE: Device was disconnected from the network.\n\nClick any reason to see which specific devices and rooms are affected to analyze network or device-specific issues.'},
+    fail_device:{title:'FAILURES BY DEVICE',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Identifies which individual lights or switches are failing the most frequently.\n\nIf one device appears here consistently, it likely needs attention.'},
+    usage_auto:{title:'AUTOMATION / DAY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The average number of automated background routines triggered by the hub per day.'},
+    usage_scene:{title:'SCENE / DAY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The average number of multi-device preset scenes activated by the hub per day.'},
+    usage_snap_devices:{title:'ACTIVE SNAP DEVICES',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">SNAP devices are physical smart hardware connected to the system.<br><br>Counts real physical hardware like lights and switches that received commands.<br><br>Excludes virtual entities like scenes and automations.'},
+    usage_app:{title:'APP USAGE RATIO',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The percentage of all manual controls that originated from the mobile app.'},
+    usage_dock:{title:'DOCK USAGE RATIO',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The percentage of all manual controls that originated from physical dock buttons.'},
+    usage_ha_ui:{title:'DIRECT HA - UI CONTROL',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Commands sent directly from the hub\'s own Home Assistant screen.'},
     src_chart:{title:'Source Breakdown',body:'A visual split of all events by how they were triggered:\n\n• App (Local): User tapped the phone app on the same Wi-Fi\n• Remote App: User tapped the app from outside the home\n• Dock Control: Physical dock button was pressed\n• Observed Change: State change detected automatically (e.g. manual switch, scene activation)\n\nClick any segment to see those specific events in the Log Center.'},
-    dock_usage:{title:'Dock Usage',body:'The action-type usage breakdown from dock_logs — how the docks are being used:\n\n• Total Dock Actions: All docklet actions recorded in dock_logs this period\n• Active Docklets: How many individual button assignments were used\n• Action table: counts per action type (toggle / increment / decrement)\n\nThis panel is usage only. Dock reliability (did the press succeed?) is on the Reliability tab and comes from ha_logs (the reliable, always-on source).'},
+    dock_usage:{title:'DOCK USAGE',body:'<hr style=\"border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0\">Visualizes the physical interactions and action types generated by smart docks in the system.\n\n• TOTAL DOCK EVENTS: The total count of dock button presses recorded during this period.\n\n• ACTIVE DOCKLETS: The number of distinct individual dock buttons that were used.\n\n• ACTION TYPE COUNT: A breakdown showing exactly what kind of commands were sent (Toggle on/off, Increment brightness/volume, Decrement brightness/volume).\n\nAnalyze this data to understand how users physically interact with the smart home environment.'},
     dev_activity:{title:'Device Activity',body:'A ranked list of every device (light or switch) controlled through this hub, sorted by most-used first. Shows:\n\n• Device: The entity ID (short name) of the device\n• Room: Which room it\'s in\n• Events: Total commands sent to this device in the selected period\n• Reliability: What percentage of commands on this device succeeded\n• P50: The median response time for this specific device\n\nClick any row to see the full stats for that device including its failure events.'},
     log_center:{title:'Log Center',body:'A detailed event-level workspace for debugging. Every command event appears here with its timestamp, device, room, control method, latency, and failure reason.\n\nHow to use it:\n• Failures tab: Shows only failed commands — start here when investigating an issue\n• Slow Events tab: Shows commands that took over 800ms\n• All Events tab: Every event in the selected period\n• Source / Reason filters: Narrow down to a specific control method or failure type\n• Search box: Filter by device name, room, or date\n• Click any row: Expands a visual timing pipeline showing exactly where time was spent in that specific command'}
   };

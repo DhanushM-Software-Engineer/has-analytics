@@ -140,8 +140,13 @@ def uc_src(use_case):
 @app.get("/api/hubs")
 def list_hubs():
     rows = q("""
-        SELECT DISTINCT hub_id
-        FROM `schnell-home-automation.schnell_analytics.app_logs`
+        SELECT DISTINCT hub_id FROM (
+            SELECT hub_id FROM `schnell-home-automation.schnell_analytics.ha_logs` WHERE hub_id IS NOT NULL AND hub_id != ''
+            UNION DISTINCT
+            SELECT hub_id FROM `schnell-home-automation.schnell_analytics.app_logs` WHERE hub_id IS NOT NULL AND hub_id != ''
+            UNION DISTINCT
+            SELECT hub_id FROM `schnell-home-automation.schnell_analytics.dock_logs` WHERE hub_id IS NOT NULL AND hub_id != ''
+        )
         ORDER BY hub_id
     """, [])
     return {"hubs": [r["hub_id"] for r in rows]}
@@ -183,7 +188,8 @@ def hub_detail(hub_id: str,
         f_le       = ex.submit(q, f"""
             SELECT ROUND(AVG(latency_ms)) AS avg,
                    APPROX_QUANTILES(latency_ms,100)[OFFSET(50)] AS p50,
-                   APPROX_QUANTILES(latency_ms,100)[OFFSET(95)] AS p95
+                   APPROX_QUANTILES(latency_ms,100)[OFFSET(95)] AS p95,
+                   ROUND(STDDEV(latency_ms)) AS stddev
             FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL
               AND use_case IN ('Local App Control','Device Bind (App)')
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date""", p)
@@ -204,7 +210,8 @@ def hub_detail(hub_id: str,
         f_hs       = ex.submit(q, f"""
             SELECT ROUND(AVG(gap)) AS avg,
                    APPROX_QUANTILES(gap,100)[OFFSET(50)] AS p50,
-                   APPROX_QUANTILES(gap,100)[OFFSET(95)] AS p95
+                   APPROX_QUANTILES(gap,100)[OFFSET(95)] AS p95,
+                   ROUND(STDDEV(gap)) AS stddev
             FROM (
               SELECT TIMESTAMP_DIFF(SAFE_CAST(snap_state_change_ts AS TIMESTAMP),
                                     SAFE_CAST(matter_command_ts  AS TIMESTAMP),
@@ -288,7 +295,10 @@ def hub_detail(hub_id: str,
         f_daily    = ex.submit(q, f"""
             SELECT date, COUNT(*) AS total,
                    ROUND(100*COUNTIF(success)/COUNT(*),2) AS rel,
+                   AVG(latency_ms) AS avg,
+                   STDDEV(latency_ms) AS sd,
                    APPROX_QUANTILES(latency_ms,100 IGNORE NULLS)[OFFSET(50)] AS p50,
+                   APPROX_QUANTILES(latency_ms,100 IGNORE NULLS)[OFFSET(95)] AS p95,
                    ROUND(100*COUNTIF(latency_ms<1000)/
                          NULLIF(COUNTIF(latency_ms IS NOT NULL),0),2) AS ns
             FROM {AL} WHERE hub_id=@hub_id AND {APP_UC}
@@ -362,7 +372,8 @@ def hub_detail(hub_id: str,
         f_hub_app    = ex.submit(q, f"""
             SELECT ROUND(AVG(diff)) AS avg,
                    APPROX_QUANTILES(diff,100)[OFFSET(50)] AS p50,
-                   APPROX_QUANTILES(diff,100)[OFFSET(95)] AS p95
+                   APPROX_QUANTILES(diff,100)[OFFSET(95)] AS p95,
+                   ROUND(STDDEV(diff)) AS stddev
             FROM (
               SELECT TIMESTAMP_DIFF(SAFE_CAST(ws_confirmation_ts AS TIMESTAMP),
                                     SAFE_CAST(rest_response_ts  AS TIMESTAMP),
@@ -470,10 +481,10 @@ def hub_detail(hub_id: str,
             SELECT COUNT(*) AS cnt
             FROM {HL} h
             WHERE h.hub_id=@hub_id AND h.is_trigger
-              AND h.log_source NOT LIKE 'automation:%'
-              AND h.log_source NOT LIKE 'scene:%'
-              AND h.log_source NOT LIKE 'dock:%'
-              AND h.log_source NOT LIKE 'snap:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'automation:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'scene:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'dock:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'snap:%'
               AND NOT EXISTS (
                 SELECT 1 FROM {AL} a
                 WHERE a.hub_id=@hub_id AND a.trigger_id=h.trigger_id
@@ -483,10 +494,10 @@ def hub_detail(hub_id: str,
             SELECT h.event_timestamp AS ts, h.entity_id AS dev, h.friendly_name, h.room
             FROM {HL} h
             WHERE h.hub_id=@hub_id AND h.is_trigger
-              AND h.log_source NOT LIKE 'automation:%'
-              AND h.log_source NOT LIKE 'scene:%'
-              AND h.log_source NOT LIKE 'dock:%'
-              AND h.log_source NOT LIKE 'snap:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'automation:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'scene:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'dock:%'
+              AND COALESCE(h.log_source, '') NOT LIKE 'snap:%'
               AND NOT EXISTS (
                 SELECT 1 FROM {AL} a
                 WHERE a.hub_id=@hub_id AND a.trigger_id=h.trigger_id
@@ -500,13 +511,13 @@ def hub_detail(hub_id: str,
     le     = f_le.result()
     # APPROX_QUANTILES/AVG return NULL for an empty window — coalesce to 0 so the
     # UI never renders "nullms".
-    le_kpi = {k: (le[0].get(k) or 0) for k in ("avg","p50","p95")} if le else {"avg":0,"p50":0,"p95":0}
+    le_kpi = {k: (le[0].get(k) or 0) for k in ("avg","p50","p95","stddev")} if le else {"avg":0,"p50":0,"p95":0,"stddev":0}
     le_events = f_le_ev.result()
     for e in le_events:
         e["src"] = uc_src(e.get("uc"))
 
     hs     = f_hs.result()
-    hs_kpi = {k: (hs[0].get(k) or 0) for k in ("avg","p50","p95")} if hs else {"avg":0,"p50":0,"p95":0}
+    hs_kpi = {k: (hs[0].get(k) or 0) for k in ("avg","p50","p95","stddev")} if hs else {"avg":0,"p50":0,"p95":0,"stddev":0}
     hs_events = f_hs_ev.result()
 
     per_uc_rows = f_per_uc.result()
@@ -544,7 +555,8 @@ def hub_detail(hub_id: str,
     ha_raw       = ha_rows[0] if ha_rows else {}
     hub_app_kpi  = {"avg": ha_raw.get("avg") or 0,
                     "p50": ha_raw.get("p50") or 0,
-                    "p95": ha_raw.get("p95") or 0}
+                    "p95": ha_raw.get("p95") or 0,
+                    "stddev": ha_raw.get("stddev") or 0}
 
     # Complete app-triggered event list — Log Center source of truth
     all_events = f_all_ev.result()
@@ -693,7 +705,7 @@ def hub_detail(hub_id: str,
         "speed": {
             "hub_snap_hub": {**hs_kpi, "events": hs_events},
             "local_e2e":    {**le_kpi, "events": le_events},
-            "remote_e2e":   {"avg":0,"p50":0,"p95":0,"events":[]},
+            "remote_e2e":   {"avg":0,"p50":0,"p95":0,"stddev":0,"events":[]},
             "hub_app":      {**hub_app_kpi, "events": []},
             "buckets":       buckets,
             "bucket_events": bucket_events,
