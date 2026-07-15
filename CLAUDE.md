@@ -61,14 +61,20 @@ All metrics are **all-source** and reconcile with their drill-downs. Full detail
 in `docs/Schnell_Analytics_Architecture.md`; the essentials:
 
 - **Total Events / Reliability / Failures** = app commands (`app_logs`, app-triggered
-  only) + dock presses (`ha_logs`) + scene activations + automation runs (`ha_logs`).
-  `Total = Success + Failures` always holds.
+  only) + dock presses (`ha_logs`) + scene activations + automation runs + **direct hub
+  control** (`ha_logs`). `Total = Success + Failures` always holds.
+- **Sources are App / Dock / Hub.** "Hub" is one consolidated source = direct hub
+  control + automation runs + scene activations (reliability-by-source + usage share).
 - **Latency / Speed / North Star** = app-command only (only `app_logs` has timestamps).
-- **Hub → SNAP → Hub latency** = `snap_state_change_ts − matter_command_ts` gap (ha_logs).
+- **Hub → SNAP → Hub latency** = `snap_state_change_ts − matter_command_ts` gap (ha_logs),
+  capped at `SNAP_MAX_MS` (30 s) to drop stale/clock-skewed outliers.
 - **Dock** reliability + counts from `ha_logs` (press = `call_service` tagged `dock_id`,
   success = its `context_id` produced an on/off state); `dock_logs` is usage-breakdown only.
 - **Observed Change (App)** is unreliable and never shown (internal `usage.direct`).
-- **Direct HA-screen control** is not counted (indistinguishable from app in `ha_logs`).
+- **Direct hub control** = a controllable device (light/switch/fan/…) reaching a concrete
+  state with `actuation_source LIKE 'ha:%'` (excludes `ha:automation`). This is the real
+  origin field — it replaces the old trigger_id anti-join, which counted HA system noise.
+  Every counted event is a confirmed actuation (success); folded into the totals.
 - Backend returns complete, unsampled event lists so Log Center / heatmap / Daily chart
   counts equal the summary cards exactly.
 

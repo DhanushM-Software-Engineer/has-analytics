@@ -89,7 +89,10 @@ function relColor(r){return r>97?'var(--green)':r>93?'var(--yellow)':'var(--red)
 function relTag(r){return r>97?'tag-green':r>93?'tag-yellow':'tag-red'}
 function statusLabel(r){return r>97?'Healthy':r>93?'Warning':'Critical'}
 
-function failuresFor(hub,predFn){return(D[hub].failures||[]).filter(predFn)}
+// All-source failures for a hub: pull from the complete event pool (app + dock + hub),
+// not the app-only D[hub].failures sample — otherwise Dock/Hub source drill-downs would
+// list nothing even though the card shows a failure count.
+function failuresFor(hub,predFn){return buildEventPool(hub).filter(e=>e.status==='fail').filter(predFn)}
 // UC → src matching based on actual data values:
 // App Control  → src: 'app'
 // Dock Control → src: 'docklet'
@@ -99,7 +102,10 @@ function srcPred(key){
   const k=(key||'').toLowerCase();
   if(k.includes('dock'))return f=>(f.src||'').toLowerCase().includes('docklet');
   if(k.includes('remote'))return f=>{const s=(f.src||'').toLowerCase();return s.includes('app_remote')||s.includes('remote_app')||s==='remote';};
-  if(k.includes('auto')||k.includes('observ'))return f=>(f.src||'').toLowerCase().includes('direct');
+  // Hub = everything the hub itself originated: direct hub control + scenes + automations
+  // (all tagged src 'direct_hub' / 'direct_hub_ui').
+  if(k.includes('hub')||k.includes('auto')||k.includes('scene')||k.includes('observ'))
+    return f=>(f.src||'').toLowerCase().includes('direct');
   // App Control: src='app' only (not app_remote)
   return f=>(f.src||'').toLowerCase()==='app';
 }
@@ -343,11 +349,12 @@ function buildEventPool(hub){
     dev:e.dev||'—',room:e.room||'—',src:'direct_hub',lat:null,
     reason:null,net:'hub',dock:'—',status:'ok',segType:'hub_observed',hasTiming:false}));
 
-  // Direct HA-UI control (Hub Logging Spec) — additive new metric, not yet
-  // folded into total_activity. See docs on f_ha_ui_cnt in main.py.
-  (d.hub_ha_ui_events||[]).forEach(e=>events.push({hub,ts:e.ts,uc:'Direct HA-UI Control',
-    dev:e.dev||'—',room:e.room||'—',src:'direct_hub_ui',lat:null,
-    reason:null,net:'hub',dock:'—',status:'ok',segType:'hub_ha_ui',hasTiming:false}));
+  // Direct hub control (Hub Logging Spec, actuation_source 'ha:*') — a device driven
+  // from the hub's own HA screen. Folded into the all-source totals; part of "Hub".
+  (d.hub_ha_ui_events||[]).forEach(e=>events.push({hub,ts:e.ts,uc:'Hub Control',
+    dev:e.dev||'—',room:e.room||'—',src:'direct_hub_ui',lat:null,action:e.action||'',
+    reason:null,net:'hub',dock:'—',status:(e.success===false)?'fail':'ok',
+    segType:'hub_ha_ui',hasTiming:false}));
 
   return events.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
 }
@@ -660,7 +667,7 @@ function renderLogCenter(){
   if(byClass.app)srcParts.push(`App ${byClass.app}`);
   if(byClass.remote)srcParts.push(`Remote ${byClass.remote}`);
   if(byClass.dock)srcParts.push(`Dock ${byClass.dock}`);
-  if(byClass.hub)srcParts.push(`Hub scene/auto ${byClass.hub}`);
+  if(byClass.hub)srcParts.push(`Hub ${byClass.hub}`);
   summary.innerHTML=`<span class="lc-cnt">${events.length}</span> events shown`+
     (srcParts.length?` <span style="color:var(--muted)">(${srcParts.join(' · ')})</span>`:'')+
     (failCnt>0?` · <span class="lc-cnt-r">${failCnt} failure${failCnt!==1?'s':''}</span>`:'')+
@@ -848,7 +855,7 @@ function renderDetail(hub){
   const hubFails=f-appFails-dockFails;
 
   kpiEl.innerHTML=`
-    <div class="kpi" onclick="openLogCenter({hub:'${hub}',tab:'all',context:{label:'${hub.toUpperCase()} — All Activity',desc:'All reliable events · ${activePeriodLabel()}'}})"><div class="label" style="${ts}">TOTAL EVENTS${ib('hub_total')}</div><div class="value">${(d.total_activity!=null?d.total_activity:d.total).toLocaleString()}</div><div class="sub">App ${(d.usage&&d.usage.app)||0} · Dock ${(d.usage&&d.usage.docklet)||0} · Hub ${((d.usage&&(d.usage.hub_scene_total||0)+(d.usage.hub_auto_total||0)))||0}</div></div>
+    <div class="kpi" onclick="openLogCenter({hub:'${hub}',tab:'all',context:{label:'${hub.toUpperCase()} — All Activity',desc:'All reliable events · ${activePeriodLabel()}'}})"><div class="label" style="${ts}">TOTAL EVENTS${ib('hub_total')}</div><div class="value">${(d.total_activity!=null?d.total_activity:d.total).toLocaleString()}</div><div class="sub">App ${(d.usage&&d.usage.app)||0} · Dock ${(d.usage&&d.usage.docklet)||0} · Hub ${((d.usage&&(d.usage.hub_total!=null?d.usage.hub_total:(d.usage.hub_scene_total||0)+(d.usage.hub_auto_total||0)+(d.usage.hub_direct_total||0))))||0}</div></div>
     <div class="kpi" onclick="showHubRelModal('${hub}')"><div class="label" style="${ts}">RELIABILITY${ib('hub_reliability')}</div><div class="value" style="color:${_act?relColor(_arel):'var(--muted)'}">${_act?_arel+'%':'—'}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">${_act?(_act-f).toLocaleString()+' Success, '+f.toLocaleString()+' Failures':'No activity in range'}</span>${_act?tgtLine(parseFloat(_arel),TARGETS.reliability):''}</div></div>
     <div class="kpi" onclick="showHubSpeedModal('${hub}')"><div class="label" style="${ts}">P50 SPEED${ib('hub_latency')}</div><div class="value" style="color:${d.speed.local_e2e.p50>800?'var(--yellow)':'#e8edf5'}">${d.total&&d.speed.local_e2e.p50!=null?d.speed.local_e2e.p50+'ms':'—'}</div><div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px"><span class="sub" style="margin:0">Median Response Time</span>${tgtLine(d.speed.local_e2e.p50,TARGETS.p50Local)}</div></div>
     <div class="kpi" style="cursor:pointer" onclick="showHubNSModal('${hub}')">
@@ -882,6 +889,9 @@ function showDayDebug(hub,dayIdx,focus){
   const d=D[hub],day=(_dailyArr&&_dailyArr[dayIdx])||(d.daily&&d.daily[dayIdx]);if(!day)return;
   const nsC=(day.ns||0)>=95?'var(--green)':(day.ns||0)>=80?'var(--yellow)':'var(--red)';
   const relC=relColor(day.rel);
+  // null/NaN-safe formatter — app-latency metrics (p50/p95/avg/ns) are null on days
+  // with only hub/dock activity, so never render "nullms".
+  const fmt=(v,s)=>(v==null||isNaN(v))?'—':(v+(s||''));
 
   const pool=buildEventPool(hub);
   const dayAll=pool.filter(e=>(e.ts||'').startsWith(day.date));
@@ -889,24 +899,22 @@ function showDayDebug(hub,dayIdx,focus){
   const dayNsMiss=dayAll.filter(e=>parseFloat(e.lat||0)>1000);
   const cols=[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'lat',label:'Latency'},{key:'reason',label:'Reason'}];
 
-  const statBar=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
-    <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">Total Events</div>
-      <div style="font-size:20px;font-weight:700;color:#e8edf5">${day.total}</div>
-    </div>
-    <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">Reliability</div>
-      <div style="font-size:20px;font-weight:700;color:${relC}">${day.rel}%</div>
-    </div>
-    <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">P50 Latency</div>
-      <div style="font-size:20px;font-weight:700;color:${day.p50>800?'var(--yellow)':'#e8edf5'}">${day.p50}ms</div>
-    </div>
-    <div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
-      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">North Star</div>
-      <div style="font-size:20px;font-weight:700;color:${nsC}">${(day.ns||0).toFixed(1)}%</div>
-    </div>
-  </div>`;
+  const tile=(label,val,color)=>`<div style="flex:1;min-width:100px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:4px">${label}</div>
+      <div style="font-size:20px;font-weight:700;color:${color||'#e8edf5'}">${val}</div>
+    </div>`;
+  // Only show the tiles relevant to what was clicked. Failures trend → no P50/North Star.
+  let tiles;
+  if(focus==='reliability'){
+    tiles=tile('Total Events',day.total)+tile('Reliability',fmt(day.rel,'%'),relC)+tile('Failed',dayFails.length,'var(--red)');
+  } else if(focus==='ns'){
+    tiles=tile('Total Events',day.total)+tile('North Star',fmt(day.ns!=null?(+day.ns).toFixed(1):null,'%'),nsC)+tile('Events >1s',dayNsMiss.length,'var(--yellow)');
+  } else if(focus==='speed'){
+    tiles=tile('Total Events',day.total)+tile('P50',fmt(day.p50,'ms'),(day.p50>800?'var(--yellow)':'#e8edf5'))+tile('P95',fmt(day.p95,'ms'))+tile('Avg',fmt(day.avg!=null?Math.round(day.avg):null,'ms'));
+  } else {
+    tiles=tile('Total Events',day.total)+tile('Reliability',fmt(day.rel,'%'),relC)+tile('P50 Latency',fmt(day.p50,'ms'),(day.p50>800?'var(--yellow)':'#e8edf5'))+tile('North Star',fmt(day.ns!=null?(+day.ns).toFixed(1):null,'%'),nsC);
+  }
+  const statBar=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">${tiles}</div>`;
 
   const lcAllFails={hub,tab:'failures',filters:{search:day.date},context:{label:`Failures on ${day.date}`,desc:`${hub.toUpperCase()} · Reliability was ${day.rel}%`}};
   const lcAllSlow={hub,tab:'slow',filters:{search:day.date},context:{label:`Slow Events on ${day.date}`,desc:`${hub.toUpperCase()} · North Star was ${(day.ns||0).toFixed(1)}%`}};
@@ -951,6 +959,22 @@ function showDayDebug(hub,dayIdx,focus){
         <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(logOpts).replace(/"/g,'&quot;')})">View ${day.date} slow events in Log Center →</button>
       </div>
       ${rows.length?evTable(rows,cols):`<div class="dbg-empty">No >1s events in sample for ${day.date}. ~${nsFail} events missed the 1s target. Click "View in Log Center →" to search by this date.</div>`}
+    </div>`;
+
+  } else if(focus==='speed'){
+    // P50/P95 speed trend + AVG/SD trend drill-down: this day's timed events, slowest first.
+    title=`${day.date} — Speed (P50 ${fmt(day.p50,'ms')} · P95 ${fmt(day.p95,'ms')})`;
+    const timed=dayAll.filter(e=>{const l=parseFloat(e.lat);return !isNaN(l)&&l>0;})
+                      .sort((a,b)=>parseFloat(b.lat||0)-parseFloat(a.lat||0));
+    rows=timed;
+    logOpts=lcAllEvs;
+    body+=`<div class="dbg-section">
+      <div class="dbg-section-hdr">
+        <span class="dbg-section-title">Timed app commands on ${day.date} — ${rows.length} sampled (slowest first)</span>
+        <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(logOpts).replace(/"/g,'&quot;')})">View ${day.date} in Log Center →</button>
+      </div>
+      <p style="font-size:10px;color:var(--muted);margin:0 0 8px">Speed (P50/P95/Avg/StdDev) is measured from app-command round-trips only — hub-initiated and dock events have no app latency.</p>
+      ${rows.length?evTable(rows,cols):`<div class="dbg-empty">No timed events in sample for ${day.date}.</div>`}
     </div>`;
   }
 
@@ -1036,6 +1060,7 @@ function renderOverall(d){
     {label:'P95 Speed (ms)',data:_p95Arr,borderColor:'#e74c3c',backgroundColor:'rgba(231,76,60,0.1)',fill:true,tension:.3,pointRadius:3,spanGaps:true,order:2},
     {label:'Target (ms)',data:dates.map(()=>1000),borderColor:'rgba(160,160,160,1)',borderDash:[3,3],borderWidth:1.5,pointRadius:0,fill:false,tension:0,order:0}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      onClick:(e,els)=>{if(!els.length)return;showDayDebug(activeHub,els[0].index,'speed');},
       plugins:{
         legend:{
           labels:{
@@ -1285,10 +1310,14 @@ function renderSpeed(d){
     div.innerHTML = `<div style="flex: 1; padding-right: 40px;">
       <div style="font-size: 13px; font-weight: bold; color: #fff; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">${sg.name}</div>
       <div style="font-size: 11px; color: var(--muted); line-height: 1.5;">${cleanDesc}</div>
+      <div style="font-size:10px;color:var(--blue);margin-top:8px;font-weight:600">Click for breakdown & Log Center →</div>
     </div>
     <div>${rightSide}</div>`;
+    div.style.cursor='pointer';
     div.onclick=()=>{
       const row=(l,v)=>`<tr><td style="color:var(--muted);padding:5px 14px 5px 0;white-space:nowrap">${l}</td><td>${v}</td></tr>`;
+      // P50 above target = slow (used to colour the P50 figure in the modal).
+      const isSlow = sg.target ? (sg.val.p50 > sg.target.val) : (sg.val.p50 > 1000);
       // No-data segments: explain WHY instead of showing stats/samples that would mislead
       if(noData){
         const why=sg.key==='remote_e2e'
@@ -1304,10 +1333,22 @@ function renderSpeed(d){
           </div>`);
         return;
       }
+      // Exact per-event formula behind each segment (matches docs/FORMULAS.md).
+      const fMap={
+        hub_snap_hub:{f:'snap_state_change_ts − matter_command_ts',src:'ha_logs · per event · 0 < gap ≤ 30s',note:'The device round-trip over the Thread mesh. Same for every origin (app, dock, automation, scene, hub UI). Stale/clock-skewed gaps > 30s excluded.'},
+        hub_app:{f:'ws_confirmation_ts − rest_response_ts',src:'app_logs · per event · diff ≥ 0',note:'Time for the hub to push the confirmed state to the app over WebSocket.'},
+        local_e2e:{f:'latency_ms = ws_confirmation_ts − tap_ts',src:'app_logs · Local App Control + Device Bind',note:'Full tap-to-confirmed round-trip on local Wi-Fi.'},
+        remote_e2e:{f:'latency_ms = ws_confirmation_ts − tap_ts',src:'app_logs · Remote App Control',note:'Full round-trip when controlling from outside the home.'}};
+      const fm=fMap[sg.key]||{f:'',src:'',note:''};
       let body=`<table style="font-size:12px;margin-bottom:14px">
         ${row('Segment',`<strong>${sg.name}</strong>`)}${row('Description',sg.desc)}
+        ${row('Formula',`<code style="font-size:11px;color:#e8edf5">${fm.f}</code>`)}
+        ${row('Source',`<span style="font-size:11px;color:var(--muted)">${fm.src}</span>`)}
+        ${row('Aggregation',`<span style="font-size:11px;color:var(--muted)">P50/P95 = 50th/95th percentile · Avg = mean · Std Dev = σ, across all events in the period</span>`)}
+        ${row('Notes',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">${fm.note}</span>`)}
         ${row('Avg',sg.val.avg+'ms')}${row('P50',`<strong style="font-size:16px;color:${isSlow?'var(--yellow)':'#e8edf5'}">${sg.val.p50}ms</strong>`)}
         ${row('P95',`<span style="color:${sg.val.p95>1000?'var(--red)':sg.val.p95>500?'var(--yellow)':'var(--green)'}">${sg.val.p95}ms</span>`)}
+        ${row('Std Dev',(sg.val.stddev!=null?Math.round(sg.val.stddev):0)+'ms')}
       </table>`;
       const segF=sg.key==='hub_snap_hub'?'hub_snap':sg.key==='hub_app'?'hub_app':sg.key;
       const lcOpts={hub:activeHub,tab:'all',segFilter:segF,
@@ -1384,6 +1425,7 @@ function renderSpeed(d){
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
+      onClick:(e,els)=>{if(!els.length)return;showDayDebug(activeHub,els[0].index,'speed');},
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -1442,6 +1484,17 @@ function renderSpeed(d){
   });
 
 
+  // Surface hub-initiated (direct) control in Speed-by-use-case. Hub actions have no
+  // app round-trip, so their speed IS the Hub → SNAP → Hub device round-trip. Injected
+  // into d.speed.per_uc so both the card and its drill-down (showUCDetail) see it.
+  const _hd=d.usage&&d.usage.hub_direct_total;
+  if(_hd&&s.hub_snap_hub&&(s.hub_snap_hub.p50||s.hub_snap_hub.avg)){
+    s.per_uc['Hub Control (Direct)']={
+      avg:s.hub_snap_hub.avg,p50:s.hub_snap_hub.p50,p95:s.hub_snap_hub.p95,
+      stddev:s.hub_snap_hub.stddev,count:_hd,success:_hd,buckets:{},
+      events:(d.hub_ha_ui_events||[]).slice(0,50).map(e=>({ts:e.ts,dev:e.dev,lat:'round-trip',src:'direct_hub_ui',room:e.room}))
+    };
+  }
   renderUCCards(s.per_uc);
 }
 
@@ -1541,7 +1594,8 @@ const UC_DESC={
   'Device Bind (App)':'User commissions or binds a device from the app — App → Hub (HA) → SNAP → WebSocket → App',
   'Docklet Press (App)':'User presses a physical dock button → Hub processes it → the app observes and records the resulting state change with its timing',
   'Remote App Control':'User controls device via mobile app over the Internet — same flow as local control but routed remotely',
-  'Observed Change (App)':'State change the app observed but did not initiate — dock presses, automations, scene activations, manual switches'
+  'Observed Change (App)':'State change the app observed but did not initiate — dock presses, automations, scene activations, manual switches',
+  'Hub Control (Direct)':'Device driven directly from the hub\'s own Home Assistant screen (not the app). There is no app round-trip, so the speed shown is the Hub → SNAP → Hub device round-trip (snap_state_change_ts − matter_command_ts).'
 };
 
 window.showUCDetail=function(uc){
@@ -1640,13 +1694,14 @@ function renderReliability(d){
       scales:{y:{title:{display:true,text:'Reliability %'},min:0,max:102},x:{title:{display:true,text:'Date'}}}}});
 
   const srcContainer = document.getElementById('srcRelCards');
-  const mkCard = (title, rel, fail, total, target, isLast) => {
+  const mkCard = (title, rel, fail, total, target, isLast, srcKey) => {
     const isRed = rel < target;
     const rc = isRed ? 'var(--red)' : (rel === 100 ? 'var(--green)' : 'var(--yellow)');
     const border = isLast ? 'none' : '1px solid rgba(255,255,255,0.05)';
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:${border}">
+    const click = srcKey ? ` class="clickable" style="cursor:pointer" onclick="showSrcRelModal('${srcKey}',${total},${total-fail},${fail},${rel})"` : '';
+    return `<div${click} style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:${border}${srcKey?';cursor:pointer':''}">
       <div>
-        <div style="font-size:12px;font-weight:600;color:var(--text);letter-spacing:0.5px;margin-bottom:4px">${title}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);letter-spacing:0.5px;margin-bottom:4px">${title}${srcKey?' <span style="font-size:9px;color:var(--blue);font-weight:600">Inspect →</span>':''}</div>
         <div style="font-size:11px;color:var(--muted)">${fail} Failed &nbsp;&bull;&nbsp; ${total} Total</div>
       </div>
       <div style="text-align:right">
@@ -1666,17 +1721,15 @@ function renderReliability(d){
   const dockFail = dockTot - dockSucc;
   const dockRel=dockTot>0?+(100*dockSucc/dockTot).toFixed(2):(r.dock_trigger_feedback||0);
 
-  const autoV = r.src_rel && r.src_rel['automations'] ? r.src_rel['automations'] : {rel:100, fail:0, total:0};
-  const autoRel = autoV.rel;
+  // Hub = one source combining direct hub-UI control + automation runs + scene
+  // activations (backend src_rel['Hub']). Not split into separate "Direct HA" /
+  // "automation/scene" rows — just "Hub".
+  const hubV = r.src_rel && r.src_rel['Hub'] ? r.src_rel['Hub'] : {rel:100, fail:0, total:0};
 
-  const bindV = r.src_rel && r.src_rel['device_bind'] ? r.src_rel['device_bind'] : {rel:100, fail:0, total:0};
-  const bindRel = bindV.rel;
-
-  srcContainer.innerHTML = 
-    mkCard('APP CONTROL', appRel, appFail, appTot, 97, false) +
-    mkCard('DOCK CONTROL', dockRel, dockFail, dockTot, 97, false) +
-    mkCard('AUTOMATIONS', autoRel, autoV.fail, autoV.total, 97, false) +
-    mkCard('DEVICE BIND', bindRel, bindV.fail, bindV.total, 97, true);
+  srcContainer.innerHTML =
+    mkCard('APP CONTROL', appRel, appFail, appTot, 97, false, 'App Control') +
+    mkCard('DOCK CONTROL', dockRel, dockFail, dockTot, 97, false, 'Dock Control') +
+    mkCard('HUB', hubV.rel, hubV.fail, hubV.total, 97, true, 'Hub');
 
   // 3. Failures by Reason (Donut Chart)
   if (charts.failReason) { charts.failReason.destroy(); }
@@ -1883,6 +1936,59 @@ window.showSrcRelModal=function(src,total,success,fail,rel){
   showModal(`${lbl} — Reliability Debug`,body);
 };
 
+// Dock reliability row → drill-down (was referenced by the table but never defined).
+window.showDockModal=function(dockId){
+  const hub=activeHub;
+  const dk=(window._dockStats||[]).find(x=>x.dock_id===dockId);
+  const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
+  if(!dk){showModal('Dock — '+dockId,'<div class="dbg-empty">No data for this dock in the selected period.</div>');return;}
+  const fail=dk.total-dk.success, rel=dk.total?+(100*dk.success/dk.total).toFixed(2):0;
+  let body=`<table style="font-size:12px;margin-bottom:4px">
+    ${row('Dock',`<strong style="font-family:monospace">${dk.dock_id}</strong>`)}
+    ${row('Total Presses',`<strong style="font-size:16px">${dk.total}</strong>`)}
+    ${row('Successful',`<strong style="color:var(--green)">${dk.success}</strong>`)}
+    ${row('Failed',`<strong style="color:var(--red);font-size:16px">${fail}</strong>`)}
+    ${row('Reliability',`<strong style="color:${relColor(rel)};font-size:16px">${rel}%</strong>`)}
+    ${row('How it\'s measured','A press = a dock call_service tagged with this dock_id (ha_logs). Success = its context_id produced an on/off device state.')}
+  </table>`;
+  if(dk.docklets&&dk.docklets.length){
+    body+=`<div class="dbg-section"><div class="dbg-section-hdr"><span class="dbg-section-title">Per-docklet breakdown</span></div>`+
+      evTable(dk.docklets.map(x=>({docklet:x.docklet_id,total:x.total,success:x.success,fail:x.total-x.success,rel:(x.total?+(100*x.success/x.total).toFixed(1):0)+'%'})),
+        [{key:'docklet',label:'Docklet'},{key:'total',label:'Total'},{key:'success',label:'OK'},{key:'fail',label:'Fail'},{key:'rel',label:'Reliability'}])+`</div>`;
+  }
+  const lcOpts={hub,tab:'all',srcFilter:'Dock Control',filters:{search:dockId},context:{label:`Dock ${dockId}`,desc:`${hub.toUpperCase()} · ${dk.total} presses · ${rel}% reliable`}};
+  body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">Inspect dock events in Log Center →</button></div>`;
+  showModal(`Dock Reliability — ${dockId}`,body);
+};
+
+// Failures-by-device row → drill-down (was referenced by the table but never defined).
+window.showDevModal=function(id,room,total,rel,p50,failC){
+  const hub=activeHub;
+  const fails=failuresFor(hub,f=>f.dev===id);
+  const reasons=(D[hub].fail_by_device&&D[hub].fail_by_device[id])?D[hub].fail_by_device[id].reasons:{};
+  const reasonStr=Object.keys(reasons).length?Object.entries(reasons).map(([k,v])=>`${k}: <strong>${v}</strong>`).join(' &nbsp;·&nbsp; '):'—';
+  const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
+  let body=`<table style="font-size:12px;margin-bottom:4px">
+    ${row('Device',`<strong style="font-family:monospace">${id}</strong>`)}
+    ${row('Room',room||'—')}
+    ${row('Total Commands',`<strong style="font-size:16px">${total}</strong>`)}
+    ${row('Reliability',`<strong style="color:${relColor(rel)};font-size:16px">${rel}%</strong>`)}
+    ${row('Failures',`<strong style="color:var(--red);font-size:16px">${failC}</strong>`)}
+    ${row('Median (P50)',`${p50}ms`)}
+    ${row('Failure Reasons',`<span style="font-size:11px">${reasonStr}</span>`)}
+  </table>`;
+  const lcOpts={hub,tab:'failures',filters:{search:(id||'').split('.').pop()},context:{label:`Failures — ${id}`,desc:`${hub.toUpperCase()} · ${failC} of ${total} commands failed`}};
+  body+=`<div class="dbg-section">
+    <div class="dbg-section-hdr">
+      <span class="dbg-section-title">Failure Events (${fails.length} sampled)</span>
+      <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">Inspect in Log Center →</button>
+    </div>
+    ${fails.length?evTable(fails.slice(0,12),[{key:'ts',label:'Time'},{key:'uc',label:'Use Case'},{key:'room',label:'Room'},{key:'src',label:'Source'},{key:'reason',label:'Reason'},{key:'lat',label:'Latency'}]):`<div class="dbg-empty">No failure events in sample. Click "Inspect in Log Center →" to search all events for this device.</div>`}
+    ${fails.length>12?`<p style="font-size:10px;color:var(--muted);margin-top:6px">Showing 12 of ${fails.length}.</p>`:''}
+  </div>`;
+  showModal(`Device — ${id}`,body);
+};
+
 window.showReasonModal=function(reason,count){
   const hub=activeHub;
   const v=D[hub].fail_by_reason?.[reason];
@@ -2029,16 +2135,19 @@ function showDockStatModal(ds){
 // ═══════════════════════════════════════════════════════════
 function renderUsage(d){
   const u=d.usage||{app:0,remote:0,docklet:0,direct:0,app_ratio:0,dock_ratio:0,observed_per_day:0,scene_per_day:0,scene_total:0,snap_devices:0};
-  const hTotal=(u.app||0)+(u.docklet||0);
+  // Usage share is a 3-way split: App vs Dock vs Hub (Hub = scenes + automations +
+  // direct hub control). The ratios sum to 100%.
+  const hubUse=(u.hub_total!=null)?u.hub_total:((u.hub_scene_total||0)+(u.hub_auto_total||0)+(u.hub_direct_total||0));
+  const hTotal=(u.app||0)+(u.docklet||0)+hubUse;
   document.getElementById('usageKPIs').innerHTML=`
     <div class="kpi" onclick="showUsageModal('auto')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Automation / Day<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_auto')">ⓘ</button></div><div class="value">${u.hub_auto_per_day||0}</div><div class="formula-ref">= ${u.hub_auto_total||0} hub-recorded ÷ ${activeDaysCount()} days</div><div class="sub">Click for breakdown</div></div>
     <div class="kpi" onclick="showUsageModal('scene')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Scene / Day<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_scene')">ⓘ</button></div><div class="value">${u.hub_scene_per_day||0}</div><div class="formula-ref">= ${u.hub_scene_total||0} hub-recorded ÷ ${activeDaysCount()} days</div><div class="sub">Click for breakdown</div></div>
     <div class="kpi" onclick="showUsageModal('devices')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Active SNAP Devices<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_snap_devices')">ⓘ</button></div><div class="value">${u.snap_devices||0}</div><div class="formula-ref">Physical devices active this period</div><div class="sub">Click for device list</div></div>
     <div class="kpi" onclick="showUsageModal('app')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">App Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_app')">ⓘ</button></div><div class="value">${u.app_ratio||0}%</div><div class="formula-ref">= ${u.app||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
     <div class="kpi" onclick="showUsageModal('dock')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Dock Usage Ratio<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_dock')">ⓘ</button></div><div class="value">${u.dock_ratio||0}%</div><div class="formula-ref">= ${u.docklet||0} ÷ ${hTotal}</div><div class="sub">Click for breakdown</div></div>
-    <div class="kpi" onclick="showUsageModal('ha_ui')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Direct HA-UI Control<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_ha_ui')">ⓘ</button></div><div class="value">${u.direct_ha_ui_total||0}</div><div class="formula-ref">= ${u.direct_ha_ui_per_day||0}/day · new metric</div><div class="sub">Click for breakdown</div></div>`;
-  const hubSA=((u.hub_scene_total||0)+(u.hub_auto_total||0));
-  const srcLabels=['App (Local)','Remote App','Dock Control','Hub (Scene/Auto)'];
+    <div class="kpi" onclick="showUsageModal('ha_ui')"><div class="label" style="display:flex;justify-content:space-between;align-items:center">Direct Hub Control<button class="info-btn" onclick="event.stopPropagation();showInfo('usage_ha_ui')">ⓘ</button></div><div class="value">${u.hub_direct_total||0}</div><div class="formula-ref">= ${u.hub_direct_per_day||0}/day · from hub HA screen</div><div class="sub">Click for breakdown</div></div>`;
+  const hubSA=(u.hub_total!=null)?u.hub_total:((u.hub_scene_total||0)+(u.hub_auto_total||0)+(u.hub_direct_total||0));
+  const srcLabels=['App (Local)','Remote App','Dock Control','Hub'];
   charts.src=mc('srcChart',{type:'doughnut',data:{labels:srcLabels,datasets:[{data:[u.app||0,u.remote||0,u.docklet||0,hubSA],backgroundColor:['#3d82f0','#1fa355','#d4961f','#9d65c9'],borderWidth:0}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'65%',
       onClick:(e,els)=>{if(!els.length)return;
@@ -2228,6 +2337,19 @@ function renderUsage(d){
       },
       options:{
         responsive:true,maintainAspectRatio:false,
+        onClick:(e,els)=>{if(!els.length)return;const x=ds[els[0].index];if(!x)return;
+          const tot=(x.app||0)+(x.dock||0)+(x.hub||0);
+          const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
+          const lcOpts={hub:activeHub,tab:'all',filters:{search:x.date},context:{label:`Usage on ${x.date}`,desc:`${activeHub.toUpperCase()} · ${tot} events`}};
+          let body=`<table style="font-size:12px;margin-bottom:4px">
+            ${row('Date',`<strong>${x.date}</strong>`)}
+            ${row('App',`<strong style="color:#3d82f0">${x.app||0}</strong>`)}
+            ${row('Dock',`<strong style="color:#d4961f">${x.dock||0}</strong>`)}
+            ${row('Hub',`<strong style="color:#9d65c9">${x.hub||0}</strong> <span style="font-size:10px;color:var(--muted)">(direct + automations + scenes)</span>`)}
+            ${row('Total',`<strong style="font-size:16px">${tot}</strong>`)}
+          </table>
+          <div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${x.date} in Log Center →</button></div>`;
+          showModal(`Usage — ${x.date}`,body);},
         scales:{x:{title:{display:true,text:'Date'},stacked:true,grid:{display:false}},y:{title:{display:true,text:'Events'},stacked:true,grid:{color:'rgba(255,255,255,0.05)'}}},
         plugins:{
           legend:{display:false},
@@ -2267,33 +2389,36 @@ function renderUsage(d){
           <div style="font-size:24px;font-weight:700">${u.dock_ratio||0}%</div>
         </div>
         <div class="kpi" style="padding:16px;cursor:pointer" onclick="showUsageModal('ha_ui')">
-          <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">DIRECT HA - UI CONTROL<button class="info-btn" style="border:none;background:none;padding:0;margin-left:4px" onclick="event.stopPropagation();showInfo('usage_ha_ui')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></div><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
-          <div style="font-size:24px;font-weight:700">${u.direct_ha_ui_total||0}</div>
+          <div style="font-size:10px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">DIRECT HUB CONTROL<button class="info-btn" style="border:none;background:none;padding:0;margin-left:4px" onclick="event.stopPropagation();showInfo('usage_ha_ui')"><svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round" style="display:block;opacity:0.6"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg></button></div><hr style="border:0;border-top:1px solid var(--border);margin:0 0 12px 0">
+          <div style="font-size:24px;font-weight:700">${u.hub_direct_total||0}</div>
         </div>
       `;
     } else {
-    body+=`<div class="dbg-section"><div class="dbg-empty">No failures recorded for this device.</div></div>`;
+      /* dead branch: #usageKPIs always exists. Orphaned device-modal markup removed. */
   }
-  showModal(id,body);
+  /* Removed an orphaned showModal(id,body) here — leftover device-modal code that
+     referenced undefined id/body and threw at the end of every renderUsage().
+     The real device drill-down is window.showDevModal. */
 };
 
 window.showUsageModal=function(type){
   const hub=activeHub,d=D[hub];
   const u=d.usage||{};
   const app=u.app||0,docklet=u.docklet||0,remote=u.remote||0,direct=u.direct||0;
-  const total=app+docklet+remote+direct,hTotal=app+docklet;
-  const app_ratio=u.app_ratio||0,dock_ratio=u.dock_ratio||0;
+  const hubUse=(u.hub_total!=null)?u.hub_total:((u.hub_scene_total||0)+(u.hub_auto_total||0)+(u.hub_direct_total||0));
+  const total=app+docklet+remote+direct,hTotal=app+docklet+hubUse;
+  const app_ratio=u.app_ratio||0,dock_ratio=u.dock_ratio||0,hub_ratio=u.hub_ratio||0;
   const observed_per_day=u.observed_per_day||0,scene_per_day=u.scene_per_day||0,scene_total=u.scene_total||0;
   const row=(l,v)=>`<tr><td style="color:var(--muted);padding:6px 16px 6px 0;white-space:nowrap">${l}</td><td style="padding:6px 0">${v}</td></tr>`;
   let title='',body='',lcOpts=null;
   if(type==='auto'){
     title='Automation / Day';
     lcOpts={hub,tab:'all',ucFilter:'Automation Run (Hub)',context:{label:'Hub-Recorded Automation Runs',desc:`${hub.toUpperCase()} · ${u.hub_auto_total||0} runs from ha_logs · ${activePeriodLabel()}`}};
-    body=`<table style="font-size:12px">${row('Formula','Hub-recorded automation runs ÷ days in period')}${row('Hub-recorded runs (tile value)',`<strong style="font-size:16px">${u.hub_auto_total||0}</strong> <span style="font-size:10px;color:var(--muted)">ha_logs automation_triggered — recorded even when the app is closed</span>`)}${row('Per Day',`<strong>${u.hub_auto_per_day||0}</strong>`)}${row('Why hub-recorded?',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">The app only observes changes while it is open, so its automation counts are inconsistent. The hub records every run.</span>`)}</table>`;
+    body=`<table style="font-size:12px">${row('Formula',`<code style="font-size:11px;color:#e8edf5">${u.hub_auto_total||0} runs ÷ ${activeDaysCount()} days = ${u.hub_auto_per_day||0}/day</code>`)}${row('Hub-recorded runs (tile value)',`<strong style="font-size:16px">${u.hub_auto_total||0}</strong> <span style="font-size:10px;color:var(--muted)">ha_logs automation_triggered — recorded even when the app is closed</span>`)}${row('Per Day',`<strong>${u.hub_auto_per_day||0}</strong>`)}${row('Why hub-recorded?',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">The app only observes changes while it is open, so its automation counts are inconsistent. The hub records every run.</span>`)}</table>`;
   } else if(type==='scene'){
     title='Scene / Day';
     lcOpts={hub,tab:'all',ucFilter:'Scene Activated (Hub)',context:{label:'Hub-Recorded Scene Activations',desc:`${hub.toUpperCase()} · ${u.hub_scene_total||0} activations from ha_logs · ${activePeriodLabel()}`}};
-    body=`<table style="font-size:12px">${row('Formula','Hub-recorded scene activations ÷ days in period')}${row('Hub-recorded activations (tile value)',`<strong style="font-size:16px">${u.hub_scene_total||0}</strong> <span style="font-size:10px;color:var(--muted)">ha_logs scene call_service — recorded even when the app is closed</span>`)}${row('Per Day',`<strong>${u.hub_scene_per_day||0}</strong>`)}${row('Why hub-recorded?',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">The app only observes activations while it is open and can log state-refresh bursts as activations, so its scene counts are inconsistent. The hub records every activation.</span>`)}</table>`;
+    body=`<table style="font-size:12px">${row('Formula',`<code style="font-size:11px;color:#e8edf5">${u.hub_scene_total||0} activations ÷ ${activeDaysCount()} days = ${u.hub_scene_per_day||0}/day</code>`)}${row('Hub-recorded activations (tile value)',`<strong style="font-size:16px">${u.hub_scene_total||0}</strong> <span style="font-size:10px;color:var(--muted)">ha_logs scene call_service — recorded even when the app is closed</span>`)}${row('Per Day',`<strong>${u.hub_scene_per_day||0}</strong>`)}${row('Why hub-recorded?',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">The app only observes activations while it is open and can log state-refresh bursts as activations, so its scene counts are inconsistent. The hub records every activation.</span>`)}</table>`;
   } else if(type==='devices'){
     title='Active SNAP Devices';
     lcOpts={hub,tab:'all',context:{label:'All Device Events',desc:`${hub.toUpperCase()} · all physical SNAP device activity`}};
@@ -2301,15 +2426,29 @@ window.showUsageModal=function(type){
   } else if(type==='app'){
     title='App Usage Ratio';
     lcOpts={hub,tab:'all',srcFilter:'App Control',context:{label:'App (Local) Events',desc:`${hub.toUpperCase()} · ${app} local app events · ${activePeriodLabel()}`}};
-    body=`<table style="font-size:12px">${row('Formula','App ÷ (App + Dock)')}${row('App Events',`<strong style="font-size:16px;color:var(--blue)">${app}</strong>`)}${row('Dock Events',docklet)}${row('Ratio',`<strong style="font-size:16px;color:var(--blue)">${app_ratio}%</strong>`)}</table>`;
+    body=`<table style="font-size:12px">${row('Formula','App ÷ (App + Dock + Hub)')}${row('App Events',`<strong style="font-size:16px;color:var(--blue)">${app}</strong>`)}${row('Dock Events',docklet)}${row('Hub Events',hubUse)}${row('Ratio',`<strong style="font-size:16px;color:var(--blue)">${app_ratio}%</strong>`)}</table>`;
   } else if(type==='dock'){
     title='Dock Usage Ratio';
     lcOpts={hub,tab:'all',srcFilter:'Dock Control',context:{label:'Dock Control Events',desc:`${hub.toUpperCase()} · ${docklet} dock events · ${activePeriodLabel()}`}};
-    body=`<table style="font-size:12px">${row('Formula','Dock ÷ (App + Dock)')}${row('Dock Events',`<strong style="font-size:16px;color:var(--green)">${docklet}</strong>`)}${row('App Events',app)}${row('Ratio',`<strong style="font-size:16px;color:var(--green)">${dock_ratio}%</strong>`)}</table>`;
+    body=`<table style="font-size:12px">${row('Formula','Dock ÷ (App + Dock + Hub)')}${row('Dock Events',`<strong style="font-size:16px;color:var(--green)">${docklet}</strong>`)}${row('App Events',app)}${row('Hub Events',hubUse)}${row('Ratio',`<strong style="font-size:16px;color:var(--green)">${dock_ratio}%</strong>`)}</table>`;
   } else {
-    title='Direct HA-UI Control';
-    lcOpts={hub,tab:'all',ucFilter:'Direct HA-UI Control',context:{label:'Direct HA-UI Control Events',desc:`${hub.toUpperCase()} · ${u.direct_ha_ui_total||0} actions taken directly from the hub's own Home Assistant screen`}};
-    body=`<table style="font-size:12px">${row('Formula','Hub-recorded actions that are not the app, an automation, a scene, or a dock — resolved via trigger_id/is_trigger/log_source')}${row('Count (tile value)',`<strong style="font-size:16px">${u.direct_ha_ui_total||0}</strong>`)}${row('Per Day',`<strong>${u.direct_ha_ui_per_day||0}</strong>`)}${row('New metric',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">Previously impossible to count — app-relayed and hub-screen commands looked identical to the hub. Not yet folded into Total Events / Reliability while this is validated against more real-world traffic.</span>`)}</table>`;
+    title='Direct Hub Control';
+    lcOpts={hub,tab:'all',ucFilter:'Hub Control',context:{label:'Direct Hub Control Events',desc:`${hub.toUpperCase()} · ${u.hub_direct_total||0} devices driven directly from the hub's own Home Assistant screen`}};
+    body=`<table style="font-size:12px">${row('Formula','Controllable devices (light/switch/fan/…) actuated with actuation_source ha:* — the hub UI, not the app, a dock, an automation or a scene')}${row('Count (tile value)',`<strong style="font-size:16px">${u.hub_direct_total||0}</strong>`)}${row('Per Day',`<strong>${u.hub_direct_per_day||0}</strong>`)}${row('Part of "Hub"',`<span style="font-size:11px;line-height:1.5;color:var(--muted)">Counted in Total Events / Reliability and grouped under the <strong>Hub</strong> source together with automation runs (${u.hub_auto_total||0}) and scene activations (${u.hub_scene_total||0}). The hub's <code>actuation_source</code> field records the real origin, so hub-screen control is separated from app-relayed commands.</span>`)}</table>`;
+  }
+  // For the hub-recorded sources (automations / scenes / direct hub control), show a
+  // real sample of the actual events inline so the drill-down is more than a formula.
+  const ucForType={auto:'Automation Run (Hub)',scene:'Scene Activated (Hub)',ha_ui:'Hub Control'};
+  if(ucForType[type]){
+    const evs=buildEventPool(hub).filter(e=>e.uc===ucForType[type]);
+    body+=`<div class="dbg-section" style="margin-top:12px">
+      <div class="dbg-section-hdr">
+        <span class="dbg-section-title">Sample Events (${evs.length})</span>
+        <button class="dbg-lc-link" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View in Log Center →</button>
+      </div>
+      ${evs.length?evTable(evs.slice(0,15),[{key:'ts',label:'Time'},{key:'dev',label:'Device'},{key:'room',label:'Room'},{key:'action',label:'Action'},{key:'src',label:'Source'}]):`<div class="dbg-empty">No ${title} events in the selected period.</div>`}
+      ${evs.length>15?`<p style="font-size:10px;color:var(--muted);margin-top:6px">Showing 15 of ${evs.length}.</p>`:''}
+    </div>`;
   }
   body+=`<div class="modal-cta"><button class="modal-cta-btn" onclick="closeModal();openLogCenter(${JSON.stringify(lcOpts).replace(/"/g,'&quot;')})">View ${title} in Log Center →</button></div>`;
   showModal(title,body);
@@ -2321,11 +2460,14 @@ window.showUsageModal=function(type){
 function showFleetModal(type){
   const hubs=Object.keys(D);
   let fTotal=0,fSuccess=0,fFail=0,fLatencies=[],fNS=[];
-  hubs.forEach(h=>{const d=D[h];fTotal+=d.total;fSuccess+=d.success;fFail+=d.total-d.success;
-    fLatencies.push({hub:h,p50:d.speed.local_e2e.p50});
+  hubs.forEach(h=>{const d=D[h];
+    fTotal  +=(d.total_activity!=null?d.total_activity:d.total);
+    fSuccess+=(d.activity_success!=null?d.activity_success:d.success);
+    fFail   +=(d.activity_fail!=null?d.activity_fail:(d.total-d.success));
+    if(d.total&&d.speed.local_e2e.p50!=null)fLatencies.push({hub:h,p50:d.speed.local_e2e.p50});
     if(d.daily)d.daily.forEach(dy=>{if(dy.ns!==undefined)fNS.push(dy.ns)})});
   const fRel=fTotal>0?((fSuccess/fTotal)*100).toFixed(2):0;
-  const fP50=Math.round(fLatencies.reduce((a,b)=>a+b.p50,0)/fLatencies.length);
+  const fP50=fLatencies.length?Math.round(fLatencies.reduce((a,b)=>a+b.p50,0)/fLatencies.length):0;
   const fNSavg=fNS.length>0?(fNS.reduce((a,b)=>a+b,0)/fNS.length).toFixed(1):0;
 
   let title='',body='';
@@ -2727,8 +2869,8 @@ window.showHubListModal=function(){
 
 window.showInfo=function(key){
   const INFO={
-    overall_usage:{title:'OVERALL USAGE',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Shows the total proportion of commands originating from each source.\n\n  HUB (Automations / Scenes): Commands triggered automatically by the hub.\n  APP (Local): Commands from the app while on the same Wi-Fi network.\n  DOCK: Commands from physical dock button presses.\n  APP (Remote): Commands from the app while away from home.\n\nAnalyze this chart to understand how users interact with the system.'},
-    usage_trend:{title:'USAGE TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Provides a daily breakdown of system interactions across all control sources.\n\n  HUB: Commands executed automatically via automations and scenes.\n  APP: Manual interactions initiated through the mobile app (Local & Remote).\n  DOCK: Physical interactions via dock button presses.\n\nMonitor these trends over time to understand user behavior. A steady shift away from manual App usage towards Hub and Dock controls often indicates a well-automated, highly optimized smart home environment.'},
+    overall_usage:{title:'OVERALL USAGE',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Shows the total proportion of commands originating from each source.\n\n  HUB: Everything the hub itself originated — direct hub-screen control, automations and scenes.\n  APP (Local): Commands from the app while on the same Wi-Fi network.\n  DOCK: Commands from physical dock button presses.\n  APP (Remote): Commands from the app while away from home.\n\nAnalyze this chart to understand how users interact with the system.'},
+    usage_trend:{title:'USAGE TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Provides a daily breakdown of system interactions across all control sources.\n\n  HUB: Everything the hub originated — direct hub-screen control, automations and scenes.\n  APP: Manual interactions initiated through the mobile app (Local & Remote).\n  DOCK: Physical interactions via dock button presses.\n\nMonitor these trends over time to understand user behavior. A steady shift away from manual App usage towards Hub and Dock controls often indicates a well-automated, highly optimized smart home environment.'},
 dock_usage:{title:'DOCK USAGE',body:'<hr style=\"border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0\">Detailed breakdown of physical dock interactions.<br><br><b>Total Dock Events</b>: The total number of button presses recorded.<br><b>Total Docks</b>: The number of unique dock hubs sending commands.<br><b>Active Docklets</b>: The number of individual docklet buttons pressed.<br><br><b>Action Types</b>: Shows how users are utilizing the buttons (toggling states vs adjusting brightness/volume).'},
     fleet_total:{title:'TOTAL EVENTS',body:'The total number of commands successfully processed across the entire system. This count includes all actions originating from the APP + DOCK + HUB.'},
     fleet_reliability:{title:'RELIABILITY',body:'Measures the percentage of commands successfully executed by the system out of all commands attempted.\n\n<b>Formula:</b> (Successful Commands / Total Attempted Commands) × 100\n\n<b>Ranges:</b>\n• Good: > 97%\n• Acceptable: 95% - 97%\n• Bad: < 95%'},
@@ -2738,7 +2880,7 @@ dock_usage:{title:'DOCK USAGE',body:'<hr style=\"border:0;border-top:1px solid v
     hub_reliability:{title:'RELIABILITY',body:'Measures the percentage of commands successfully executed by the system out of all commands attempted.\n\n<b>Formula:</b> (Successful Commands / Total Attempted Commands) × 100\n\n<b>Ranges:</b>\n• Good: > 97%\n• Acceptable: 95% - 97%\n• Bad: < 95%'},
     hub_latency:{title:'P50 SPEED',body:'The median response time for commands. Exactly half of all commands are processed faster than this speed, providing a realistic view of typical system performance.\n\n<b>Formula:</b> The 50th percentile value of all end-to-end command execution times.\n\n<b>Ranges:</b>\n• Good: < 800ms\n• Acceptable: 800ms - 1000ms\n• Bad: > 1000ms'},
     hub_failures:{title:'FAILURES',body:'The total number of commands that failed to complete on this hub. In our context, a failure means the system could not successfully execute a command.\n\nThis total includes:\n• App Failures: Commands sent from the user app that failed\n• Dock Failures: Physical docklet presses that failed\n• Hub Failures: Automated scene or schedule executions from the hub that failed'},
-    daily_chart:{title:'DAILY EVENTS & RELIABILITY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">A day-by-day breakdown of system activity and its success rate.\n\n• Hub Events (Violet): Automated actions from the hub (scenes/schedules).\n• App Events (Blue): Manual controls from the user app.\n• Dock Events (Orange): Physical dock button presses.\n• Reliability % (Green Dotted Line): Percentage of total commands that successfully executed.\n• Target % (Grey Dotted Line): The 97% reliability is the goal.\n\nA dip in the green line indicates system issues on that day.'},
+    daily_chart:{title:'DAILY EVENTS & RELIABILITY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">A day-by-day breakdown of system activity and its success rate.\n\n• Hub Events (Violet): Everything the hub originated — direct hub-screen control, automations and scenes.\n• App Events (Blue): Manual controls from the user app.\n• Dock Events (Orange): Physical dock button presses.\n• Reliability % (Green Dotted Line): Percentage of total commands that successfully executed.\n• Target % (Grey Dotted Line): The 97% reliability is the goal.\n\nA dip in the green line indicates system issues on that day.'},
     p50_chart:{title:'P50 & P95 SPEED TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Tracks the median (P50) and worst-case (P95) response times of system commands over time.\n\n  P50 Speed (ms) (Orange Line with Dot): The median speed of commands for that day.\n  P95 Speed (ms) (Red Line with Dot): The worst-case response time where 95% of all commands finished faster than this value.\n  Target (ms) (Grey Dotted Line): The target response time (<1000ms).\n\nIf the red or orange lines spike above the target line, it indicates the system was abnormally slow on that day.'},
     ns_chart:{title:'NORTH STAR TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Tracks the percentage of commands that completed almost instantly (under 1 second) over time.\n\n• North Star % (Blue Line with Dot): The percentage of lightning-fast commands for that day.\n• Target % (Grey Dotted Line): The baseline goal of 95%.\n\nDrops in the blue line usually indicate temporary network congestion, a struggling device, or Thread mesh instability. Investigating these dips helps maintain a flawless user experience.'},
     fail_trend_chart:{title:'FAILURES TREND',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Breaks down exactly which commands failed each day across the system.\n\n• Hub Failures (Violet): Failures from automated hub scenes and schedules.\n• App Failures (Red): Failures from manual controls via the user app.\n• Dock Failures (Orange): Failures from physical dock button presses.\n\nMonitor this graph to easily identify if a spike in unreliability is caused by a specific source (e.g., dock commands failing constantly).'},
@@ -2759,9 +2901,9 @@ dock_usage:{title:'DOCK USAGE',body:'<hr style=\"border:0;border-top:1px solid v
     usage_auto:{title:'AUTOMATION / DAY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The average number of automated background routines triggered by the hub per day.'},
     usage_scene:{title:'SCENE / DAY',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The average number of multi-device preset scenes activated by the hub per day.'},
     usage_snap_devices:{title:'ACTIVE SNAP DEVICES',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">SNAP devices are physical smart hardware connected to the system.<br><br>Counts real physical hardware like lights and switches that received commands.<br><br>Excludes virtual entities like scenes and automations.'},
-    usage_app:{title:'APP USAGE RATIO',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The percentage of all manual controls that originated from the mobile app.'},
-    usage_dock:{title:'DOCK USAGE RATIO',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">The percentage of all manual controls that originated from physical dock buttons.'},
-    usage_ha_ui:{title:'DIRECT HA - UI CONTROL',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Commands sent directly from the hub\'s own Home Assistant screen.'},
+    usage_app:{title:'APP USAGE RATIO',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Share of all activity that originated from the mobile app, out of App + Dock + Hub. The three ratios add up to 100%.'},
+    usage_dock:{title:'DOCK USAGE RATIO',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Share of all activity that originated from physical dock buttons, out of App + Dock + Hub. The three ratios add up to 100%.'},
+    usage_ha_ui:{title:'DIRECT HUB CONTROL',body:'<hr style="border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0">Devices driven directly from the hub\'s own Home Assistant screen — not the mobile app, a dock, an automation or a scene.\n\nIdentified by the hub\'s actuation_source field (ha:*), which records the real origin of each actuation, restricted to controllable devices (light, switch, fan, …) that reached a concrete state. It is counted in Total Events / Reliability and grouped under the Hub source alongside automation runs and scene activations.'},
     src_chart:{title:'Source Breakdown',body:'A visual split of all events by how they were triggered:\n\n• App (Local): User tapped the phone app on the same Wi-Fi\n• Remote App: User tapped the app from outside the home\n• Dock Control: Physical dock button was pressed\n• Observed Change: State change detected automatically (e.g. manual switch, scene activation)\n\nClick any segment to see those specific events in the Log Center.'},
     dock_usage:{title:'DOCK USAGE',body:'<hr style=\"border:0;border-top:1px solid var(--border);margin:-4px 0 12px 0\">Visualizes the physical interactions and action types generated by smart docks in the system.\n\n• TOTAL DOCK EVENTS: The total count of dock button presses recorded during this period.\n\n• ACTIVE DOCKLETS: The number of distinct individual dock buttons that were used.\n\n• ACTION TYPE COUNT: A breakdown showing exactly what kind of commands were sent (Toggle on/off, Increment brightness/volume, Decrement brightness/volume).\n\nAnalyze this data to understand how users physically interact with the smart home environment.'},
     dev_activity:{title:'Device Activity',body:'A ranked list of every device (light or switch) controlled through this hub, sorted by most-used first. Shows:\n\n• Device: The entity ID (short name) of the device\n• Room: Which room it\'s in\n• Events: Total commands sent to this device in the selected period\n• Reliability: What percentage of commands on this device succeeded\n• P50: The median response time for this specific device\n\nClick any row to see the full stats for that device including its failure events.'},

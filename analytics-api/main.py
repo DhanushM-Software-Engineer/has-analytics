@@ -39,6 +39,13 @@ client  = bigquery.Client(project=PROJECT)
 #             (device-side activation) by dock_id + docklet_id.
 APP_UC = "use_case IN ('Local App Control','Device Bind (App)','Remote App Control')"
 
+# Hub → SNAP → Hub sanity ceiling. A real device round-trip over the Thread mesh
+# completes well under a second (p99 ~2.3s on the reference hub). A handful of rows
+# carry a stale/clock-skewed snap_state_change_ts minutes after the command (max seen
+# ~98 min), which alone dragged AVG to 36 s and STDDEV to 458 s. Anything above this
+# ceiling is not a real round-trip and is excluded from the latency stats.
+SNAP_MAX_MS = 30000
+
 
 def _build_dock_stats(dock_ev, dock_action_rows):
     """Dock RELIABILITY grouped from the SAME dock press-event list the Log Center
@@ -206,7 +213,8 @@ def hub_detail(hub_id: str,
         # Hub → SNAP → Hub = real device-actuation latency = the gap between when the
         # hub sent the Matter command and when the device confirmed its new state.
         # (NOT ha_processing_latency_ms — that's ~0, just HA's internal handling.)
-        # gap > 0 excludes rows the hub hasn't stamped with distinct times yet.
+        # gap > 0 excludes rows the hub hasn't stamped with distinct times yet;
+        # gap <= SNAP_MAX_MS drops stale/clock-skewed outliers (see SNAP_MAX_MS).
         f_hs       = ex.submit(q, f"""
             SELECT ROUND(AVG(gap)) AS avg,
                    APPROX_QUANTILES(gap,100)[OFFSET(50)] AS p50,
@@ -219,7 +227,7 @@ def hub_detail(hub_id: str,
               FROM {HL} WHERE hub_id=@hub_id
                 AND matter_command_ts IS NOT NULL AND snap_state_change_ts IS NOT NULL
                 AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
-            ) WHERE gap > 0""", p)
+            ) WHERE gap > 0 AND gap <= {SNAP_MAX_MS}""", p)
         # log_source included so the sample table shows which origin actually
         # caused this device actuation (app/dock/automation/scene/hub-ui) —
         # this segment is deliberately origin-agnostic for the *latency* stat
@@ -237,7 +245,7 @@ def hub_detail(hub_id: str,
               AND matter_command_ts IS NOT NULL AND snap_state_change_ts IS NOT NULL
               AND TIMESTAMP_DIFF(SAFE_CAST(snap_state_change_ts AS TIMESTAMP),
                                  SAFE_CAST(matter_command_ts  AS TIMESTAMP),
-                                 MILLISECOND) > 0
+                                 MILLISECOND) BETWEEN 1 AND {SNAP_MAX_MS}
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             ORDER BY event_timestamp DESC LIMIT 50""", p)
         f_per_uc   = ex.submit(q, f"""
@@ -464,46 +472,48 @@ def hub_detail(hub_id: str,
         # timestamps still feed the Hub → SNAP → Hub *latency* (f_hs), which is timing,
         # not a count.
 
-        # Direct HA-screen control — the ONE previously-uncountable source (see
-        # "Known data gaps" in the architecture doc). Resolved via the Hub Logging
-        # Spec fields (trigger_id / is_trigger / log_source): an is_trigger row
-        # that isn't automation:/scene:/dock:/snap:, AND has no matching
-        # app_logs.trigger_id, can only be a direct HA-UI action. This join is
-        # used instead of comparing HA account ids because this product only ever
-        # has one HA account per hub — the app and the hub's own UI share it, so
-        # account comparison alone can't tell them apart; whether the app itself
-        # logged initiating this exact action can. Only present on events
-        # recorded after these fields were added — older rows have NULL
-        # is_trigger and are correctly excluded, never miscounted. Kept as its
-        # own additive metric for now (not folded into total_activity yet) until
-        # it's been observed across more real-world traffic.
+        # Direct hub control — a device driven from the hub's OWN Home Assistant
+        # screen, not the app, a dock, an automation or a scene. The Hub Logging
+        # Spec's `actuation_source` field records the true ORIGIN of each actuation:
+        #   'ha:<domain>' → the hub UI drove it   (this is what we want)
+        #   'dock:...'    → a dock drove it
+        #   NULL          → app-relayed or a passive/device-reported change
+        # A genuine hub-UI control = an actual *controllable actuator* (light, switch,
+        # fan, cover, lock, …) reaching a concrete state, driven by 'ha:*' and NOT by
+        # 'ha:automation' (automation device-effects belong to the automation run,
+        # already counted — counting them here would double-count).
+        #   • The domain allow-list drops non-control 'ha:*' noise the field also
+        #     carries: person (presence), sensor/binary_sensor, number/select config,
+        #     notify/tts/stt, button, scene.
+        #   • Requiring a concrete new_state (not unavailable/unknown) drops the
+        #     device-went-offline transitions — a '→ unavailable' is not a *failed*
+        #     control, it's the device dropping off the mesh, indistinguishable from
+        #     noise without a paired command. So, like scenes/automations, every
+        #     counted hub-direct event is a confirmed actuation (success).
+        # This replaces the earlier trigger_id anti-join, which mis-counted HA *system*
+        # noise (service_registered, entity_registry_updated, panels_updated, devices
+        # going unavailable, system_log.write, …) — ~2800 bogus rows vs ~16 genuine.
+        HUB_CTRL_DOMAINS = ("'light','switch','fan','cover','lock','climate',"
+                            "'media_player','vacuum','humidifier','water_heater',"
+                            "'siren','valve'")
+        HUB_DIRECT = f"""h.actuation_source LIKE 'ha:%'
+              AND h.actuation_source NOT LIKE 'ha:automation%'
+              AND h.ha_event_type='state_changed'
+              AND SPLIT(h.entity_id,'.')[OFFSET(0)] IN ({HUB_CTRL_DOMAINS})
+              AND h.new_state IS NOT NULL
+              AND h.new_state NOT IN ('unavailable','unknown','none','')"""
         f_ha_ui_cnt = ex.submit(q, f"""
             SELECT COUNT(*) AS cnt
             FROM {HL} h
-            WHERE h.hub_id=@hub_id AND h.is_trigger
-              AND COALESCE(h.log_source, '') NOT LIKE 'automation:%'
-              AND COALESCE(h.log_source, '') NOT LIKE 'scene:%'
-              AND COALESCE(h.log_source, '') NOT LIKE 'dock:%'
-              AND COALESCE(h.log_source, '') NOT LIKE 'snap:%'
-              AND NOT EXISTS (
-                SELECT 1 FROM {AL} a
-                WHERE a.hub_id=@hub_id AND a.trigger_id=h.trigger_id
-              )
+            WHERE h.hub_id=@hub_id AND {HUB_DIRECT}
               AND DATE(h.event_timestamp) BETWEEN @from_date AND @to_date""", p)
         f_ha_ui_ev  = ex.submit(q, f"""
-            SELECT h.event_timestamp AS ts, h.entity_id AS dev, h.friendly_name, h.room
+            SELECT h.event_timestamp AS ts, h.entity_id AS dev, h.friendly_name,
+                   h.room, h.action, h.new_state, true AS success
             FROM {HL} h
-            WHERE h.hub_id=@hub_id AND h.is_trigger
-              AND COALESCE(h.log_source, '') NOT LIKE 'automation:%'
-              AND COALESCE(h.log_source, '') NOT LIKE 'scene:%'
-              AND COALESCE(h.log_source, '') NOT LIKE 'dock:%'
-              AND COALESCE(h.log_source, '') NOT LIKE 'snap:%'
-              AND NOT EXISTS (
-                SELECT 1 FROM {AL} a
-                WHERE a.hub_id=@hub_id AND a.trigger_id=h.trigger_id
-              )
+            WHERE h.hub_id=@hub_id AND {HUB_DIRECT}
               AND DATE(h.event_timestamp) BETWEEN @from_date AND @to_date
-            ORDER BY h.event_timestamp DESC LIMIT 200""", p)
+            ORDER BY h.event_timestamp DESC LIMIT 2000""", p)
 
     # ── Collect results & post-process (fast, sequential) ────────────────
     kpi = f_kpi.result()[0]
@@ -572,9 +582,11 @@ def hub_detail(hub_id: str,
     hub_scene_cnt = int(hub_obs.get("hub_scene", 0) or 0)
     hub_auto_cnt  = int(hub_obs.get("hub_auto",  0) or 0)
 
-    # Direct HA-screen control (Hub Logging Spec) — additive metric, see f_ha_ui_cnt.
-    ha_ui_rows = f_ha_ui_cnt.result()
-    ha_ui_cnt  = int((ha_ui_rows or [{}])[0].get("cnt", 0) or 0)
+    # Direct hub control (Hub Logging Spec, actuation_source 'ha:*') — see f_ha_ui_cnt.
+    # Every counted event is a confirmed actuation, so success == count, fail == 0.
+    ha_ui_cnt  = int((f_ha_ui_cnt.result() or [{}])[0].get("cnt", 0) or 0)
+    ha_ui_succ = ha_ui_cnt
+    ha_ui_fail = 0
     ha_ui_events = f_ha_ui_ev.result()
     for e in ha_ui_events:
         e["src"] = "direct_hub_ui"
@@ -657,40 +669,66 @@ def hub_detail(hub_id: str,
         src_rel["Dock Control"] = {"total": dock_press_total, "success": dock_succ,
                                    "fail": dock_fail, "rel": dock_press_rel}
 
+    # "Hub" = everything the hub itself originated: direct HA-UI control + automation
+    # runs + scene activations. Shown as ONE source (not split into "Direct HA control"
+    # + "Hub (automation/scenes)"). Scenes/automations are recorded successes; only
+    # direct control carries a real pass/fail outcome, so it's the only fail source.
+    hub_src_total = hub_scene_cnt + hub_auto_cnt + ha_ui_cnt
+    hub_src_succ  = hub_scene_cnt + hub_auto_cnt + ha_ui_succ
+    hub_src_fail  = ha_ui_fail
+    if hub_src_total:
+        src_rel["Hub"] = {"total": hub_src_total, "success": hub_src_succ,
+                          "fail": hub_src_fail,
+                          "rel": round(100 * hub_src_succ / hub_src_total, 2)}
+
     ur          = (f_usage.result() or [{}])[0]
     app_cnt     = int(ur.get("app",    0) or 0)
     remote_cnt  = int(ur.get("remote", 0) or 0)
     # Dock event count comes from ha_logs presses (reliable, always-on); the app
     # only *observes* dock presses while open, so app-observed dock is not used.
     dock_cnt    = dock_press_total
-    h_total     = app_cnt + dock_cnt
+    # Usage share is a 3-way split of who drives the home: App vs Dock vs Hub, where
+    # Hub = direct HA-UI control + automation runs + scene activations. The three
+    # ratios sum to 100%.
+    hub_usage_total = hub_scene_cnt + hub_auto_cnt + ha_ui_cnt
+    u_total     = app_cnt + dock_cnt + hub_usage_total
     snap_device_cnt = int((f_snap_count.result() or [{}])[0].get("cnt", 0) or 0)
     usage = {
         "app": app_cnt, "remote": remote_cnt,
         "docklet": dock_cnt,                # dock device activations (ha_logs)
         "direct": obs_cnt,                  # observed — INTERNAL reference only
-        "app_ratio":  round(100 * app_cnt  / h_total, 2) if h_total else 0,
-        "dock_ratio": round(100 * dock_cnt / h_total, 2) if h_total else 0,
+        "app_ratio":  round(100 * app_cnt  / u_total, 2) if u_total else 0,
+        "dock_ratio": round(100 * dock_cnt / u_total, 2) if u_total else 0,
+        "hub_ratio":  round(100 * hub_usage_total / u_total, 2) if u_total else 0,
         "snap_devices":   snap_device_cnt,
         # scene/automation — hub-recorded (ha_logs) is the only source
         "hub_scene_total":   hub_scene_cnt,
         "hub_scene_per_day": round(hub_scene_cnt / days_count, 2),
         "hub_auto_total":    hub_auto_cnt,
         "hub_auto_per_day":  round(hub_auto_cnt / days_count, 2),
-        # Direct HA-screen control (Hub Logging Spec) — additive, not yet folded
-        # into total_activity/activity_reliability. See f_ha_ui_cnt.
+        # Direct hub control (actuation_source 'ha:*') and the combined Hub total.
+        "hub_direct_total":   ha_ui_cnt,
+        "hub_direct_success": ha_ui_succ,
+        "hub_direct_per_day": round(ha_ui_cnt / days_count, 2),
+        "hub_total":          hub_usage_total,
+        "hub_per_day":        round(hub_usage_total / days_count, 2),
+        # alias kept for backward compatibility with older UI builds
         "direct_ha_ui_total":   ha_ui_cnt,
         "direct_ha_ui_per_day": round(ha_ui_cnt / days_count, 2),
     }
 
     # ── ALL-SOURCE totals — every reliable event, whoever triggered it ──────────
     # Total activity = app commands + dock presses + scene activations + automation
-    # runs. Success/fail spans app + dock (both have a real outcome); scene &
-    # automation runs are counted as successful activity (the hub recorded them).
-    total_activity   = int(kpi["total"]) + dock_press_total + hub_scene_cnt + hub_auto_cnt
+    # runs + direct hub-UI control. Success/fail spans app + dock + hub-direct (all
+    # have a real outcome); scene & automation runs are counted as successful
+    # activity (the hub recorded them). No double-count: hub-direct is actuation_source
+    # 'ha:*' (excludes app/dock/automation), distinct from every other source.
+    total_activity   = (int(kpi["total"]) + dock_press_total + hub_scene_cnt
+                        + hub_auto_cnt + ha_ui_cnt)
     app_fail         = int(kpi["total"]) - int(kpi["success"])
-    activity_success = int(kpi["success"]) + dock_succ + hub_scene_cnt + hub_auto_cnt
-    activity_fail    = app_fail + dock_fail
+    activity_success = (int(kpi["success"]) + dock_succ + hub_scene_cnt
+                        + hub_auto_cnt + ha_ui_succ)
+    activity_fail    = app_fail + dock_fail + ha_ui_fail
     activity_reliability = round(100 * activity_success / total_activity, 2) if total_activity else 0
 
     result = {
