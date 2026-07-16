@@ -8,27 +8,29 @@ All formulas only count events inside the **selected date range** (default: last
 
 ---
 
-> **Scope:** counts and reliability are **all-source** (app + dock + SNAP + scene +
-> automation). Latency/speed is **app-command only** (only app events carry timestamps).
-> App-*observed* changes are never shown (unreliable). Direct HA-screen control is
-> now countable (see "Direct HA-UI Control" in §4) but tracked as its own additive
-> metric — not yet folded into the all-source totals above.
+> **Scope:** counts and reliability are **all-source** (app + dock + scene +
+> automation + **direct hub control**). Latency/speed is **app-command only** (only app
+> events carry timestamps). App-*observed* changes are never shown (unreliable).
+> **"Hub" is one consolidated source** = direct hub control + automation runs + scene
+> activations — shown as just "Hub" everywhere (usage, reliability-by-source, trends).
 
 ## 1. Top KPIs (Overview)
 
 ### Total Events  (all sources)
 ```
 Total Events = app commands + dock presses + scene activations + automation runs
+             + direct hub control
 ```
 Every reliable event, whoever triggered it. The tile's sub-line shows the App / Dock / Hub split.
-App commands come from **app_logs**; dock, SNAP, scene and automation come from **ha_logs**.
+App commands come from **app_logs**; dock, scene, automation and direct hub control come from **ha_logs**.
 
 ### Reliability  (all sources)
 ```
 Reliability % = (all successful events ÷ Total Events) × 100
 ```
-Success spans app + dock + SNAP (each has a real pass/fail); scene and automation
-runs count as successful activity. **Example:** 1,934 of 2,120 → **91.2%**.
+Success spans app + dock (each has a real pass/fail); scene activations, automation
+runs and direct hub control count as successful activity (each counted event is a
+confirmed hub-recorded action). **Example:** 2,262 of 2,449 → **92.36%**.
 When there are no app commands in range, the tile shows **"—"** (app-command detail undefined).
 
 | Colour | Range |
@@ -39,7 +41,7 @@ When there are no app commands in range, the tile shows **"—"** (app-command d
 
 ### Failures
 ```
-Failures = Total Events − successful events   (app + dock + SNAP failures)
+Failures = Total Events − successful events   (app failures + dock failures)
 ```
 Always reconciles: Total = Success + Failures, and equals the Failures-by-Reason sum.
 
@@ -100,12 +102,14 @@ Events with backwards timestamps (clock skew) are skipped. Target: **< 200ms**.
 
 ### Hub → SNAP → Hub
 ```
-= snap_state_change_ts − matter_command_ts   (per event, from ha_logs; gap > 0)
+= snap_state_change_ts − matter_command_ts   (per event, from ha_logs; 0 < gap ≤ 30s)
 Avg / P50 / P95 over those gaps
 ```
 The real device round-trip: hub sends the Matter command → device confirms its new state.
-Now **live** (early data ≈ 325ms p50). Uses the timestamp gap, **not**
-`ha_processing_latency_ms` (that field is ~0–6ms, just HA's internal handling). Target: **< 300ms**.
+Uses the timestamp gap, **not** `ha_processing_latency_ms` (that field is ~0–6ms, just
+HA's internal handling). Gaps **over 30 s (`SNAP_MAX_MS`) are excluded** — a real
+round-trip completes well under a second; the rare stale/clock-skewed rows (max seen
+~98 min) were alone dragging AVG to 36 s and STDDEV to 458 s. Target: **< 300ms**.
 
 ### Std Dev (Standard Deviation) — on Speed by Use Case cards
 ```
@@ -214,37 +218,40 @@ observes scenes while it is open, so its counts are not used here.
 ```
 Only light.*, switch.*, fan.* — scenes/automations/scripts/groups excluded.
 
-### Direct HA-UI Control  🆕 added 2026-07-09
+### Direct Hub Control
 ```
-= count of hub-recorded actions that are not the app, an automation, a scene, or a dock ÷ days
+= controllable devices (light/switch/fan/cover/lock/…) reaching a concrete state
+  with actuation_source LIKE 'ha:%'  (excluding 'ha:automation')      [ha_logs]
 ```
 Someone controlled a device directly from the hub's own Home Assistant screen —
-not through the mobile app. This used to be permanently uncountable (an
-app-relayed command and a hub-screen command looked identical to the hub).
-It's resolved by checking whether the app itself has a matching record of
-starting that exact action (a shared `trigger_id`) — no match, and it isn't
-automation/scene/dock, means the hub's own UI is the only thing left that
-could have done it. See `HA_TELEMETRY.md` §3a for the full reasoning
-(including why comparing HA user accounts alone doesn't work here).
-**Additive metric — not yet folded into Total Events / Reliability.**
+not the mobile app, a dock, an automation or a scene. The hub's
+**`actuation_source`** field records the true origin of every actuation, so
+hub-screen control is separated from app-relayed commands directly. (This
+replaced an earlier `trigger_id` anti-join, which mis-counted HA *system* noise
+— registry updates, devices going unavailable, notify/tts entities — as
+control; on the reference hub ~2,800 bogus rows vs ~16 genuine.) Every counted
+event is a confirmed actuation, so each counts as a success.
+**Counted in Total Events / Reliability, and grouped under the "Hub" source
+together with automation runs and scene activations.**
 
 ### App Usage Ratio
 ```
-= app events ÷ (app events + dock events) × 100
+= app events ÷ (app + dock + hub events) × 100
 ```
-Of all *manual* controls, what share came from the phone app? Dock events here are the
-real dock presses from **ha_logs**. **Example:** 1717 ÷ (1717 + 384) = **81.7%**
+Share of all activity that came from the phone app. Hub = direct hub control +
+automations + scenes. **App + Dock + Hub ratios always sum to 100%.**
 
 ### Dock Usage Ratio
 ```
-= dock events ÷ (app events + dock events) × 100
+= dock events ÷ (app + dock + hub events) × 100
 ```
-The other half of the same split. App Ratio + Dock Ratio = 100%.
+Share of all activity from physical dock presses (real presses from **ha_logs**).
 
 ### Source Breakdown (doughnut)
 ```
-counts of: App (Local) · Remote App · Dock Control · Hub (Scene/Auto)
+counts of: App (Local) · Remote App · Dock Control · Hub
 ```
+Hub = direct hub control + automation runs + scene activations, shown as one slice.
 These slices always add up exactly to Total Events. (Observed Change is excluded.)
 
 ### Dock Usage (panel)  — usage breakdown only, from dock_logs

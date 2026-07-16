@@ -5,9 +5,9 @@ fleet — with the Matter server's **Node** and **Thread** views embedded direct
 
 One project, two parts:
 
-1. **Analytics dashboard** — FastAPI backend + vanilla-JS (Chart.js) single-page UI.
-   Reliability, speed, usage and per-device telemetry, all read live from BigQuery
-   (`schnell-home-automation.schnell_analytics`).
+1. **Analytics dashboard** — FastAPI backend + **React + TypeScript** (Vite, Chart.js)
+   single-page UI. Reliability, speed, usage and per-device telemetry, all read live
+   from BigQuery (`schnell-home-automation.schnell_analytics`).
 2. **Embedded Matter UI** — the Node (device list) and Thread (mesh) views from the
    Matter server dashboard, trimmed to just those two features and **served by this app**
    at `/matter`. The dashboard's Node/Thread tabs embed it; it connects to the hub's
@@ -18,15 +18,18 @@ One project, two parts:
 ## Quick start (local)
 
 ```bash
-# Run the dashboard on http://localhost:8080
+# Serve the built dashboard on http://localhost:8080
 ./analytics-api/run-local.sh          # Ctrl+C to stop
+
+# OR, for UI development with hot reload (backend must be running on :8080):
+cd web && npm run dev                 # http://localhost:5173
 ```
 
-Then open **http://localhost:8080**. Requires Google Cloud credentials with BigQuery
-read access (`gcloud auth application-default login`).
+Requires Google Cloud credentials with BigQuery read access
+(`gcloud auth application-default login`).
 
-> If you changed anything under `matter-ui/`, rebuild the embedded Matter bundle first:
-> `./build-matter.sh`
+> Changed UI code under `web/src/`? Rebuild what's served: `./build-web.sh`
+> Changed anything under `matter-ui/`? Rebuild the Matter bundle: `./build-matter.sh`
 
 ---
 
@@ -35,12 +38,15 @@ read access (`gcloud auth application-default login`).
 ```
 Analytics/
 ├── analytics-api/            FastAPI backend (main.py) — all BigQuery queries; serves public/
-│   └── run-local.sh          start locally on :8080
-├── public/                   UI (single source of truth — served locally and by Firebase)
-│   ├── index.html
-│   ├── dashboard_app.js      all rendering logic (vanilla JS + Chart.js)
-│   └── matter/               BUILT Matter Node/Thread UI (served at /matter)
+│   ├── run-local.sh          start locally on :8080
+│   └── tests/                golden API fixtures + verify_golden.py (backend behavior guardrail)
+├── web/                      DASHBOARD UI SOURCE — React + TypeScript (see web/README.md)
+├── public/                   BUILT output — what is served (never hand-edit)
+│   ├── index.html, assets/   built React dashboard (from web/, via ./build-web.sh)
+│   ├── matter/               built Matter Node/Thread UI (served at /matter)
+│   └── 404.html
 ├── matter-ui/                Matter UI build source (trimmed to Node/Thread)
+├── build-web.sh              rebuild web/ → refresh public/ (preserves matter/ + 404.html)
 ├── build-matter.sh           rebuild matter-ui → refresh public/matter/
 ├── deploy.sh                 deploy to Cloud Run + Firebase Hosting
 ├── Dockerfile, firebase.json, .firebaserc
@@ -79,24 +85,25 @@ and `docs/FORMULAS.md` for the exact sourcing and formulas.
   shows the device list / Thread mesh with the Matter header hidden.
 - Source lives in `matter-ui/` (trimmed monorepo: `dashboard` + `ws-client` +
   `custom-clusters`). Rebuild with `./build-matter.sh`.
-- The connection (hub IP / user) is hardcoded in `public/dashboard_app.js`
-  (`const MATTER_UI = {...}`).
+- The connection (hub IP / user) is hardcoded in `web/src/lib/constants.ts`
+  (`MATTER_UI`).
 
 ---
 
 ## Deploy
 
 ```bash
-git push                 # optional
+./build-web.sh           # only if you changed web/src/ (dashboard UI)
 ./build-matter.sh        # only if you changed matter-ui/
+git push                 # optional
 ./deploy.sh              # Cloud Run (API) + Firebase Hosting (UI, incl. /matter)
 # ./deploy.sh --web-only # UI-only changes (skips the Cloud Run rebuild)
 ```
 
 - Cloud Run service: `schnell-analytics-dashboard` (region `asia-south1`).
 - Firebase Hosting serves `public/` and rewrites `/api/**` to Cloud Run.
-- The `matter-ui/` **source** is excluded from the deploy; the built `public/matter/`
-  bundle **is** deployed to both.
+- The `web/` and `matter-ui/` **sources** are excluded from the deploy; the built
+  `public/` (dashboard + `matter/`) **is** deployed to both.
 
 > **Live (HTTPS) note:** the embedded Matter UI connects to the hub over `ws://`
 > (insecure), which browsers block from an HTTPS page. On the live Firebase URL the

@@ -10,3 +10,7 @@ matter-ui/node_modules/
 matter-ui/**/dist/
 matter-ui/packages/dashboard/src/client/models/descriptions.ts
 matter-ui/**/*.tsbuildinfo
+
+# React migration (web/) — build inputs/outputs
+web/node_modules/
+web/dist/

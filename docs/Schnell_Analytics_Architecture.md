@@ -35,11 +35,12 @@ The dashboard has **two scopes**, on purpose:
 | **Automation runs** | An automation fired | `ha_logs` `ha_event_type='automation_triggered'` | ✅ Counted as successful activity. |
 | **Observed Change (App)** | Passive state the app noticed | `app_logs` `use_case='Observed Change (App)'` | ❌ **Never shown.** Unreliable (only seen while the app is open). Kept internally as `usage.direct`. |
 | **SNAP-board actuation** | The SNAP hardware physically flipping a device | `ha_logs` `log_source LIKE 'snap:%'` | ❌ **Not counted** — this is the *device-layer* of an action already counted via its trigger (app / dock / automation). Counting it would double-count. The SNAP timestamps still feed the Hub → SNAP → Hub *latency* (timing, not a count). |
-| **Direct HA-UI control** | Someone controls a device from the hub's own HA screen | `ha_logs.is_trigger` row that isn't automation:/scene:/dock:/snap:, with **no matching `app_logs.trigger_id`** | ✅ **Countable as of 2026-07-09** — see the Hub Logging Spec note below. Shown as its own "Direct HA-UI Control" metric (usage tab); **not yet folded into Total Events/Reliability** while it's validated against more real-world traffic. |
+| **Direct hub control** | Someone controls a device from the hub's own HA screen | A **controllable actuator** (light/switch/fan/cover/lock/…) reaching a **concrete state** with `actuation_source LIKE 'ha:%'` (excluding `ha:automation`) | ✅ **Counted in Total Events / Reliability**, grouped under the consolidated **"Hub"** source (= direct + automations + scenes). Every counted event is a confirmed actuation → success. Replaces the earlier `trigger_id` anti-join, which mis-counted HA *system* noise (registry updates, unavailable transitions, notify/tts) — ~2,800 bogus vs ~16 genuine rows on the reference hub. |
 
-**All-source reliability** = `(app successes + dock successes + SNAP successes + scenes + automations) ÷ Total Events`.
-`Total Events = app + dock + SNAP + scenes + automations`, and always `Total = Success + Failures`.
-(Direct HA-UI control is tracked separately and not yet part of this sum — see above.)
+**All-source reliability** = `(app successes + dock successes + scenes + automations + direct hub control) ÷ Total Events`.
+`Total Events = app + dock + scenes + automations + direct hub control`, and always `Total = Success + Failures`.
+**"Hub" is one consolidated source** = direct hub control + automation runs + scene activations
+(shown as just "Hub" in usage share, reliability-by-source and trends).
 
 **dock_logs is used only for the Usage-tab action breakdown** (increment / decrement / toggle). Dock *reliability and counts* come from `ha_logs`. *dock_logs is currently mock; ha_logs is real.* The two are keyed by `dock_id` + `docklet_id`. A dock contains multiple docklets; each docklet's presses are tracked separately and sum to the dock total.
 
@@ -67,9 +68,11 @@ just covers what it changes for counting:
   `is_trigger AND log_source LIKE 'dock:%'`; rows from before this fix
   (`is_trigger IS NULL`) keep the old `dock_id`-only heuristic so historical
   counts don't shift underfoot.
-- **Direct HA-UI control became countable** — previously a permanent "Known
-  data gap" (see below), now resolved via the join described in the table
-  above.
+- **Direct hub control became countable** — previously a permanent "Known
+  data gap" (see below). First resolved via a `trigger_id` anti-join, which
+  turned out to mis-count HA *system* noise; now detected from
+  **`actuation_source LIKE 'ha:%'`** on controllable actuator domains reaching
+  a concrete state (see the table above), and folded into the totals.
 
 Rows written before 2026-07-09 have `NULL` for all four fields — this is
 expected, not an error; they simply predate the spec.
@@ -111,7 +114,7 @@ Analytics/analytics-api/main.py   FastAPI server (port 8080)
       └── GET /api/hub/{hub_id}    → full hub telemetry JSON
                   │
                   ▼
-      Analytics/public/index.html + Analytics/public/dashboard_app.js
+      Analytics/public/  (built React app from Analytics/web/)
       (browser renders charts, tables, heatmaps — no page refresh)
 ```
 
@@ -151,12 +154,14 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8080
 Analytics/
 ├── README.md                          Project overview & quick start
 ├── CLAUDE.md                          Guidance for Claude Code (whole project)
-├── public/                            Single source of truth for the UI (served locally + by Firebase)
-│   ├── index.html                     Single-page dashboard UI
-│   ├── dashboard_app.js               All rendering logic (vanilla JS + Chart.js)
+├── web/                               DASHBOARD UI SOURCE — React + TypeScript (Vite, Chart.js)
+│   └── src/                           types/ api/ lib/ charts/ state/ components/ modals/ views/
+├── public/                            BUILT output — what is served (never hand-edit)
+│   ├── index.html + assets/           Built React dashboard (from web/, via ./build-web.sh)
 │   ├── 404.html
 │   └── matter/                        BUILT Matter Node/Thread UI bundle (served at /matter)
 ├── matter-ui/                         Matter UI build SOURCE (trimmed: dashboard + ws-client + custom-clusters)
+├── build-web.sh                       Rebuild web/ → refresh public/ (preserves matter/ + 404.html)
 ├── build-matter.sh                    Rebuild matter-ui → refresh public/matter/
 ├── deploy.sh                          One-command deploy (Cloud Run + Firebase Hosting)
 ├── firebase.json / .firebaserc        Firebase Hosting config (rewrites /api/** → Cloud Run)
@@ -188,7 +193,7 @@ The **Node** and **Thread** detail tabs embed the Matter server's own dashboard,
 `/matter/index.html?ac=1&ip=192.168.0.41:8123&user=dhanush` (Thread adds `#thread`):
 `?ac=1` makes the Matter UI auto-connect to the hub's Matter WebSocket
 (`ws://192.168.0.41:5580/ws`) — skipping its login — and hide its own header/nav bar.
-The hardcoded connection lives in `public/dashboard_app.js` (`const MATTER_UI = {...}`).
+The hardcoded connection lives in `web/src/lib/constants.ts` (`MATTER_UI`).
 The Matter server itself (controller + WebSocket) runs on the **hub**, separate from
 this project.
 
@@ -344,7 +349,7 @@ Default window: last 30 days. Maximum: 90 days. Both dates are ISO-8601 strings.
 
 ### 5.1 Top-Level KPIs  *(all-source)*
 
-The headline tiles are **all-source** (app + dock + SNAP + scene + automation). The
+The headline tiles are **all-source** (app + dock + scene + automation + direct hub control). The
 app-only `total` / `success` / `reliability` fields still exist for the app-command
 detail (per-source table), but the tiles use the `activity_*` fields:
 
@@ -532,7 +537,9 @@ Trigger Reliability above:
 | `hub_auto_total` / `hub_auto_per_day` | ha_logs `automation_triggered` count ÷ days — displayed as **Automation / Day** (hub-recorded = reliable source) |
 | `hub_scene_total` / `hub_scene_per_day` | ha_logs scene `call_service` count ÷ days — displayed as **Scene / Day** (hub-recorded = reliable source) |
 | `snap_devices` | `COUNT(DISTINCT entity_id) WHERE domain NOT IN (scene, automation, script, group)` |
-| `direct_ha_ui_total` / `direct_ha_ui_per_day` | Direct HA-UI control count ÷ days (see Hub Logging Spec note above) — displayed as **Direct HA-UI Control**. Added 2026-07-09; additive, not yet folded into `total_activity` |
+| `hub_direct_total` / `hub_direct_per_day` | Direct hub control count ÷ days (`actuation_source LIKE 'ha:%'`, controllable actuators, concrete state) — displayed as **Direct Hub Control**; folded into `total_activity` |
+| `hub_total` / `hub_per_day` / `hub_ratio` | Consolidated **Hub** source = direct + automations + scenes; `hub_ratio` completes the 3-way App/Dock/Hub split (sums to 100%) |
+| `direct_ha_ui_total` / `direct_ha_ui_per_day` | Deprecated aliases of `hub_direct_*`, kept for older UI builds |
 
 **SNAP Devices domain filter** — physical devices only:
 `SPLIT(entity_id, '.')[OFFSET(0)] NOT IN ('scene', 'automation', 'script', 'group')`
@@ -576,7 +583,7 @@ Known values: `TIMEOUT`, `NO_RESPONSE`, `DEVICE_OFFLINE`, `THREAD_MESH_FAIL`
 ## 6. Backend Processing Logic (`analytics-api/main.py`)
 
 The FastAPI backend runs all BigQuery queries in parallel per request and returns a
-single JSON object that `dashboard_app.js` reads directly. All data — app_logs,
+single JSON object that the React app (`web/src/api/client.ts`) reads directly. All data — app_logs,
 ha_logs, and dock_logs — comes from BigQuery; nothing is read from local files.
 
 > **For which source feeds which number, the authoritative reference is the
@@ -620,14 +627,30 @@ ha_logs, and dock_logs — comes from BigQuery; nothing is read from local files
 19. **Hub-recorded scene/automation** (`f_hub_obs_ev`, `f_hub_obs_cnt`) — scene activations (`call_service` on scene.*) and automation runs (`automation_triggered`) from ha_logs; scene/automation `state_changed` rows are excluded (HA-restart state restores, not real activations)
 20. **Dock usage rows** (`f_dock`) — dock sheet rows from `dock_logs`, filtered by `hub_id` + date range — action-type breakdown only
 21. **Dock press events** (`f_dock_ev`) — the real reliability source, from ha_logs; requires true dock origin (`is_trigger AND log_source LIKE 'dock:%'`) on rows written after 2026-07-09, falls back to the plain `dock_id`-set heuristic on older rows — see the Hub Logging Spec note
-22. **Direct HA-UI control** (`f_ha_ui_cnt`, `f_ha_ui_ev`) — added 2026-07-09; an `is_trigger` row that isn't automation:/scene:/dock:/snap:, with no matching `app_logs.trigger_id`, resolved as direct hub-UI control
+22. **Direct hub control** (`f_ha_ui_cnt`, `f_ha_ui_ev`) — a controllable actuator (light/switch/fan/…) reaching a concrete state with `actuation_source LIKE 'ha:%'` (excluding `ha:automation`); every counted event is a confirmed actuation. Replaced the trigger_id anti-join, which mis-counted HA system noise
 23. Cache store — result saved to `_HUB_CACHE` with current timestamp
 
 All steps 2–22 fire in parallel via `ThreadPoolExecutor`. Results are collected sequentially after all futures complete. (Heatmaps are **not** a backend query — built client-side from the event pool so cell counts always equal their drill-downs.)
 
 ---
 
-## 7. UI Logic (`dashboard_app.js`)
+## 7. UI Logic (`web/` — React + TypeScript)
+
+> The UI was migrated from a single vanilla-JS file to a typed React app in `web/`
+> with **identical behavior and visuals** (verified: the event pool reproduces the
+> backend's headline numbers exactly for every golden fixture). The logic described
+> below is unchanged — only where it lives moved:
+>
+> | Concern | Module |
+> |---|---|
+> | API types (frozen contract) | `web/src/types/api.ts` (+ `contract.check.ts` compile-time check) |
+> | Event pool / reconciliation | `web/src/lib/pool.ts` (`buildEventPool`, `allSourceDaily`, `srcPred`, `failuresFor`) |
+> | Targets, Matter config, labels | `web/src/lib/constants.ts` |
+> | ⓘ info texts | `web/src/lib/info.ts` |
+> | Views & tabs | `web/src/views/` (Landing, HubDetail, LogCenter, tabs/) |
+> | Drill-down modals | `web/src/modals/` |
+>
+> Log Center rows are **virtualized** (`@tanstack/react-virtual`) for fleet scale.
 
 Vanilla JavaScript application. No framework dependencies beyond Chart.js.
 
@@ -695,7 +718,7 @@ Vanilla JavaScript application. No framework dependencies beyond Chart.js.
 | Latency Distribution | Speed | Bar chart | app_logs buckets |
 | Speed by Use Case | Speed | Cards with Avg/P50/P95/StdDev | app_logs per use_case |
 | Source Breakdown | Usage | Doughnut chart | app_logs use_case counts |
-| Usage KPIs | Usage | KPI tiles | Automation/Day + Scene/Day + Direct HA-UI Control from **ha_logs** (hub-recorded); Active Devices, App/Dock Ratio from app_logs + ha_logs |
+| Usage KPIs | Usage | KPI tiles | Automation/Day + Scene/Day + Direct Hub Control from **ha_logs** (hub-recorded); Active Devices, App/Dock/Hub Ratios from app_logs + ha_logs |
 | Dock Usage | Usage | KPI tiles + table | dock_logs (action-type breakdown only — see §5.7 for why reliability isn't here) |
 | Per-Source Reliability | Reliability | Table (display names remapped) | app_logs per use_case + ha_logs Dock Control |
 | Reliability Trend | Reliability | Line chart | app_logs daily |
@@ -759,7 +782,7 @@ Vanilla JavaScript application. No framework dependencies beyond Chart.js.
 
   "total_activity": 2120,     // ALL-SOURCE — the "Total Events" tile
   "activity_success": 1934,   // all-source successes
-  "activity_fail": 175,       // all-source failures (app + dock + SNAP)
+  "activity_fail": 187,       // all-source failures (app + dock)
   "activity_reliability": 91.2,  // ALL-SOURCE — the "Reliability" tile
 
   "speed": {                  // app-command latency only (see §5.2)
@@ -802,7 +825,7 @@ Vanilla JavaScript application. No framework dependencies beyond Chart.js.
     "app_ratio": 81.7, "dock_ratio": 18.3, "snap_devices": 12,
     "hub_scene_total": 8, "hub_scene_per_day": 0.26,
     "hub_auto_total": 8,  "hub_auto_per_day": 0.26,
-    "direct_ha_ui_total": 6, "direct_ha_ui_per_day": 0.19  // added 2026-07-09
+    "hub_direct_total": 16, "hub_direct_per_day": 0.36, "hub_total": 46, "hub_ratio": 1.89
   },
   "devices": [{ "id": "switch....", "room": "lab", "total": 364, "success": 362, "rel": 99.45, "p50": 520 }],
   "fail_by_reason": { "NO_RESPONSE": { "count": 9, "events": [...] },
@@ -887,4 +910,4 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8080
 | `[Errno 48] Address already in use` | Port 8080 taken by previous process | Run `kill -9 $(lsof -ti :8080)` then restart |
 | Dashboard shows stale data after code change | In-memory cache TTL (5 min) | Restart the server — cache is cleared on startup |
 | Dock numbers don't update after editing the sheet | Apps Script sync failed | Check the Sheet's Extensions → Apps Script → Executions log; run `syncToBigQuery` manually |
-| Browser shows old UI after JS changes | Browser JS cache | Firebase serves `public/dashboard_app.js` with a `no-cache` header, so a normal reload always fetches the latest build — no version bump needed. For local dev, hard-reload (Cmd+Shift+R). |
+| Browser shows old UI after changes | Forgot to rebuild | The served UI is the **built** app in `public/` — run `./build-web.sh` after editing `web/src/`. Firebase serves HTML with `no-cache` and Vite assets are content-hashed, so a normal reload then picks up the new build. |

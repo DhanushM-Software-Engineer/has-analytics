@@ -14,5 +14,6 @@ analytics-api/venv
 analytics-api/__pycache__
 **/__pycache__
 **/node_modules
-# Matter UI build source — not served (the built bundle in public/matter/ is)
+# UI build sources — not served (the built bundles in public/ are)
 matter-ui
+web

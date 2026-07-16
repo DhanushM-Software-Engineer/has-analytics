@@ -6,12 +6,13 @@ Schnell Fleet Analytics dashboard **plus** an embedded, trimmed Matter Node/Thre
 ## What this project is
 
 - **Schnell Fleet Debugging Dashboard** — a live, BigQuery-backed analytics dashboard
-  for the Schnell / Home-Assistant smart-home fleet. FastAPI backend + a vanilla-JS
-  (Chart.js) single-page UI. All data comes from BigQuery (`schnell_analytics`).
+  for the Schnell / Home-Assistant smart-home fleet. FastAPI backend + a **React +
+  TypeScript** (Vite, Chart.js) single-page UI in `web/`. All data comes from BigQuery
+  (`schnell_analytics`).
 - **Embedded Matter UI** — the Node and Thread views from the Matter server's own
   dashboard, trimmed to just those two features and **served by this app** at `/matter`.
   The Node/Thread tabs in the dashboard embed it (same-origin iframe); it connects to
-  the hub's Matter WebSocket for live data.
+  the hub's Matter WebSocket for live data. `matter-ui/` is part of this project.
 
 ## Repository layout
 
@@ -20,11 +21,17 @@ Analytics/
 ├── analytics-api/main.py        FastAPI backend — all BigQuery queries, serves public/
 │   ├── requirements.txt
 │   ├── run-local.sh             start the dashboard locally on :8080 (see venv note)
+│   ├── tests/                   golden API fixtures + verify_golden.py (behavior guardrail)
 │   └── venv/                    (ignored; currently broken — see venv note)
-├── public/                      UI — SINGLE SOURCE OF TRUTH (served locally + by Firebase)
-│   ├── index.html, dashboard_app.js, 404.html
-│   └── matter/                  BUILT Matter Node/Thread UI bundle (served at /matter)
+├── web/                         DASHBOARD UI SOURCE — React + TypeScript (Vite)
+│   ├── src/                     types/ api/ lib/ charts/ state/ components/ modals/ views/
+│   └── README.md                dev workflow & structure
+├── public/                      BUILT output — what is SERVED (locally + Firebase). Never hand-edit.
+│   ├── index.html, assets/      built React dashboard (from web/, via ./build-web.sh)
+│   ├── matter/                  built Matter Node/Thread UI bundle (served at /matter)
+│   └── 404.html                 Firebase 404 page
 ├── matter-ui/                   Matter UI BUILD SOURCE (trimmed: dashboard + ws-client + custom-clusters)
+├── build-web.sh                 rebuild web/ → refresh public/ (preserves matter/ + 404.html)
 ├── build-matter.sh              rebuild matter-ui → refresh public/matter/
 ├── deploy.sh                    deploy to Cloud Run (API) + Firebase Hosting (UI)
 ├── Dockerfile, firebase.json, .firebaserc
@@ -39,11 +46,20 @@ Analytics/
 ## Commands
 
 ```bash
-# Run the dashboard locally on http://localhost:8080
+# Serve the built dashboard locally on http://localhost:8080 (production path)
 ./analytics-api/run-local.sh        # kills :8080, then starts (Ctrl+C to stop)
+
+# UI development with hot reload (backend must be running on :8080)
+cd web && npm run dev               # http://localhost:5173 — /api & /matter proxied to :8080
+
+# Rebuild the dashboard after editing anything under web/src/
+./build-web.sh                      # typecheck + vite build → refresh public/ (keeps matter/)
 
 # Rebuild the Matter Node/Thread UI after editing anything under matter-ui/
 ./build-matter.sh                   # builds matter-ui + copies bundle → public/matter/
+
+# Verify the backend still reproduces its frozen behavior (after ANY backend change)
+cd analytics-api && PYTHONPATH="$PWD/venv/lib/python3.14/site-packages" python3.14 tests/verify_golden.py
 
 # Deploy live (Cloud Run + Firebase)
 ./deploy.sh                         # full deploy
@@ -85,7 +101,7 @@ in `docs/Schnell_Analytics_Architecture.md`; the essentials:
 - `?ac=1` makes the Matter UI **auto-connect** (skip its login) and **hide its own
   header/nav bar** (edits in `matter-ui/packages/dashboard/src/entrypoint/main.ts` and
   `.../pages/components/header.ts`).
-- Hardcoded connection is in `public/dashboard_app.js` (`const MATTER_UI = {...}`).
+- Hardcoded connection is in `web/src/lib/constants.ts` (`MATTER_UI`).
 - The Matter server itself (controller + WebSocket) runs on the **hub** at
   `192.168.0.41:5580` — separate from this project.
 
@@ -93,13 +109,18 @@ in `docs/Schnell_Analytics_Architecture.md`; the essentials:
 
 - **Build only the dashboard package**, never the matter-ui root: `cd matter-ui/packages/dashboard && npm run build` (this is what `build-matter.sh` does). The root build pulls in packages that need optional native BLE. matter-ui was trimmed to remove those.
 - matter-ui wants **Node ≥ 22.13** (a 22.7 install has built it fine, but upgrade if you hit issues).
-- **Deploy scope:** `.gcloudignore`/`.dockerignore` exclude `matter-ui/` (build input) but keep `public/matter/` (served). Both Cloud Run and Firebase serve `public/matter/`. `git push` + `./deploy.sh` after building.
-- **No cache-busting** — Firebase serves JS/HTML with `no-cache`; do not add `?v=` query strings.
+- **Deploy scope:** `.gcloudignore`/`.dockerignore` exclude `web/` and `matter-ui/` (build inputs) but keep `public/` (built, served). Both Cloud Run and Firebase serve `public/`. `./build-web.sh` (and `./build-matter.sh` if needed) + `git push` + `./deploy.sh`.
+- **No cache-busting** — Firebase serves JS/HTML with `no-cache`; Vite's hashed asset filenames are fine (inherent to the build), but do not add manual `?v=` query strings.
 - **Live (HTTPS) limitation:** the embedded Matter UI connects to the hub over `ws://` (insecure), which a browser blocks from an HTTPS page. So on the live Firebase URL the Matter tabs load but can't fetch live data unless the hub is served over `wss://`. Over local HTTP everything works.
 
 ## Conventions
 
-- **`public/` is the single source of truth for the UI** — edit there. There are no
-  root `dashboard.html`/`dashboard_app.js` duplicates.
+- **`web/` is the source of truth for the dashboard UI** — edit there, then run
+  `./build-web.sh`. **Never hand-edit `public/`** — it is build output (plus the
+  Matter bundle and 404.html, which `build-web.sh` preserves).
 - Keep the all-source invariants intact when touching metrics (see architecture doc).
+  The event pool in `web/src/lib/pool.ts` must keep reconciling exactly with the
+  backend's headline numbers (verified against `analytics-api/tests/golden/`).
+- After ANY backend change, run `analytics-api/tests/verify_golden.py` — backend
+  behavior (metrics logic and output) is frozen by fixture.
 - Commit/push only when asked.

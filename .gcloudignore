@@ -18,9 +18,11 @@ deploy.sh
 *.md
 *.gs
 
-# Matter UI build SOURCE — not served. The built bundle lives in public/matter/
-# (which IS uploaded). Excluding the source keeps the upload tiny.
+# UI build SOURCES — not served. The built bundles live in public/ (React
+# dashboard at public/, Matter Node/Thread at public/matter/), which IS uploaded.
+# Excluding the sources keeps the upload tiny.
 matter-ui/
+web/
 
 # Python virtualenv, caches, and Node modules
 analytics-api/venv/
