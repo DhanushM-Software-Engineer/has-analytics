@@ -1,5 +1,6 @@
 /** App shell — header, nav bar with date-range picker, view routing, modal host. */
 import { useEffect, useState } from 'react';
+import { Activity, LayoutGrid, ScrollText, CalendarRange, LoaderCircle } from 'lucide-react';
 import { DashboardProvider, useDash } from './state/DashboardContext';
 import { ModalHost } from './components/common';
 import { Landing } from './views/Landing';
@@ -17,27 +18,41 @@ function Shell() {
   return (
     <>
       <div className="header">
-        <h1>Home Automation Debugging Dashboard</h1>
-      </div>
-      <div className="nav-bar" style={{ justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex' }}>
-          <button className={`nav-item ${view.kind !== 'logcenter' ? 'active' : ''}`} onClick={dash.showLanding}>Fleet Overview</button>
-          <button className={`nav-item ${view.kind === 'logcenter' ? 'active' : ''}`} onClick={() => dash.openLogCenter({})}>Log Center</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            boxShadow: '0 4px 16px -4px rgba(99,102,241,.6)',
+          }}>
+            <Activity size={17} color="#fff" strokeWidth={2.4} />
+          </div>
+          <div>
+            <h1>Schnell Fleet Analytics</h1>
+            <div style={{ fontSize: 10.5, color: 'var(--muted)', marginTop: 1 }}>Home Automation Debugging Dashboard</div>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '0 4px' }}>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>Period:</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <CalendarRange size={14} style={{ color: 'var(--muted)' }} />
           <input type="date" className="date-input" value={fromInput} onChange={(e) => setFromInput(e.target.value)} />
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
           <input type="date" className="date-input" value={toInput} onChange={(e) => setToInput(e.target.value)} />
           <button className="apply-btn" onClick={() => dash.applyRange(fromInput, toInput)}>Apply</button>
         </div>
       </div>
+      <div className="nav-bar">
+        <button className={`nav-item ${view.kind !== 'logcenter' ? 'active' : ''}`} onClick={dash.showLanding}
+          style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <LayoutGrid size={13.5} /> Fleet Overview
+        </button>
+        <button className={`nav-item ${view.kind === 'logcenter' ? 'active' : ''}`} onClick={() => dash.openLogCenter({})}
+          style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <ScrollText size={13.5} /> Log Center
+        </button>
+      </div>
 
       {isLoading && (
         <div className="full-loader">
-          <svg viewBox="0 0 24 24" width="48" height="48" style={{ animation: 'spin 1s linear infinite', fill: 'currentColor' }}>
-            <path d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z" />
-          </svg>
+          <LoaderCircle size={44} style={{ animation: 'spin 1s linear infinite' }} />
         </div>
       )}
 

@@ -42,7 +42,7 @@ export function useHubModals(hub: string) {
                 <tr key={dy.date}>
                   <td style={tdDate}>{dy.date}</td>
                   <td style={{ ...td, color: rc, fontWeight: 600 }}>{dy.rel}%</td>
-                  <td style={{ ...td, color: '#e8edf5' }}>{(dy.fail || 0).toLocaleString()}</td>
+                  <td style={{ ...td, color: '#fafafa' }}>{(dy.fail || 0).toLocaleString()}</td>
                   <td style={td}><PillState color={rc} label={statusLabel(dy.rel)} /></td>
                   <td style={td}>{inspectBtn(() => openLogCenter({ hub, tab: 'failures', filters: { search: dy.date } }))}</td>
                 </tr>
@@ -109,8 +109,8 @@ export function useHubModals(hub: string) {
               return (
                 <tr key={dy.date}>
                   <td style={tdDate}>{dy.date}</td>
-                  <td style={{ ...td, color: '#e8edf5', fontWeight: 600 }}>{dy.total.toLocaleString()}</td>
-                  <td style={{ ...td, color: '#e8edf5' }}>{under1s.toLocaleString()}</td>
+                  <td style={{ ...td, color: '#fafafa', fontWeight: 600 }}>{dy.total.toLocaleString()}</td>
+                  <td style={{ ...td, color: '#fafafa' }}>{under1s.toLocaleString()}</td>
                   <td style={{ ...td, color: c, fontWeight: 600 }}>{(dy.ns || 0).toFixed(1)}%</td>
                   <td style={td}><PillState color={c} label={sl} /></td>
                   <td style={td}>{inspectBtn(() => openLogCenter({ hub, tab: 'slow', filters: { search: dy.date } }))}</td>

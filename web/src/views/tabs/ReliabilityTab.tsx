@@ -6,7 +6,7 @@ import { Line, Doughnut } from 'react-chartjs-2';
 import '../../charts/setup';
 import type { HubDetail, DockStats } from '../../types/api';
 import { allSourceDaily, failuresFor, srcPred } from '../../lib/pool';
-import { relColor, relTag, devShort, statusLabel } from '../../lib/format';
+import { relColor, relTag, devShort } from '../../lib/format';
 import { ucLabel } from '../../lib/constants';
 import { InfoButton, KV, EventTable, LcCta } from '../../components/common';
 import { useDash } from '../../state/DashboardContext';
@@ -170,10 +170,10 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
 
   // ── Failures by reason (donut) ────────────────────────────────────────────
   const reasonEntries = Object.entries(d.fail_by_reason || {}).sort((a, b) => b[1].count - a[1].count);
-  const palette = ['#e07a20', '#d4961f', '#1f7aa3', '#9345e0', '#4f627d'];
+  const palette = ['#f97316', '#f59e0b', '#0ea5e9', '#8b5cf6', '#64748b'];
   let pIdx = 0;
   const reasonColors = reasonEntries.map(([label]) =>
-    label === 'DEVICE_UNAVAILABLE' || label === 'DEVICE_OFFLINE' ? '#e04545' : palette[pIdx++ % palette.length]!);
+    label === 'DEVICE_UNAVAILABLE' || label === 'DEVICE_OFFLINE' ? '#ef4444' : palette[pIdx++ % palette.length]!);
 
   // ── Failures by device rows ───────────────────────────────────────────────
   const failDevData = useMemo(() =>
@@ -223,13 +223,13 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
         <h3 style={{ flexShrink: 0 }}>RELIABILITY TREND<InfoButton k="rel_trend" /></h3>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginBottom: 12, fontSize: 12, color: 'var(--text)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 24, height: 2, background: '#1fa355', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 8, height: 8, background: '#1fa355', borderRadius: '50%' }} />
+            <div style={{ width: 24, height: 2, background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 8, height: 8, background: '#10b981', borderRadius: '50%' }} />
             </div>
             Reliability percentage
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ width: 24, height: 2, borderBottom: '2px dashed rgba(220,232,248,.25)' }} />
+            <div style={{ width: 24, height: 2, borderBottom: '2px dashed rgba(228,228,231,.25)' }} />
             Target %
           </div>
         </div>
@@ -238,8 +238,8 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
             data={{
               labels: dates,
               datasets: [
-                { label: 'Reliability percentage', data: daily.map((x) => x.rel), borderColor: '#1fa355', tension: 0.3, pointRadius: 3, fill: true, backgroundColor: 'rgba(31,163,85,.06)' },
-                { label: 'Target %', data: dates.map(() => 97), borderColor: 'rgba(220,232,248,.25)', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0 },
+                { label: 'Reliability percentage', data: daily.map((x) => x.rel), borderColor: '#10b981', tension: 0.3, pointRadius: 3, fill: true, backgroundColor: 'rgba(16,185,129,.06)' },
+                { label: 'Target %', data: dates.map(() => 97), borderColor: 'rgba(228,228,231,.25)', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0 },
               ],
             }}
             options={{
@@ -392,8 +392,6 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
         </table>
       </div>
     </div>
-    {/* keep statusLabel referenced for potential state pills parity */}
-    <span style={{ display: 'none' }}>{statusLabel(100)}</span>
   </>);
 }
 

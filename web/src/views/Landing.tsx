@@ -1,14 +1,14 @@
 /** Fleet Overview landing — fleet KPIs, status badge, hub health grid. */
 import { useMemo, useState } from 'react';
 import { useDash } from '../state/DashboardContext';
-import { relColor, relTag, statusLabel } from '../lib/format';
+import { relColor, statusLabel } from '../lib/format';
 import { TARGETS } from '../lib/constants';
 import { InfoButton, TargetPill } from '../components/common';
 import { useFleetModal, useHubListModal } from '../modals/fleetModals';
 
 const titleStyle: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  fontSize: 12, fontWeight: 700, color: '#e8edf5',
+  fontSize: 12, fontWeight: 700, color: '#fafafa',
 };
 
 export function Landing() {
@@ -66,7 +66,7 @@ export function Landing() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 17, color: '#e8edf5', fontWeight: 700, letterSpacing: '-.3px', textTransform: 'uppercase' }}>FLEET OVERVIEW</h2>
+        <h2 style={{ fontSize: 17, color: '#fafafa', fontWeight: 700, letterSpacing: '-.3px', textTransform: 'uppercase' }}>FLEET OVERVIEW</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div className="hub-count-btn" onClick={showHubList}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--muted)', display: 'inline-block' }} />
@@ -119,7 +119,7 @@ export function Landing() {
 
       <div className="hub-fleet-section">
         <div className="hub-fleet-bar">
-          <div><div style={{ fontSize: 13, fontWeight: 600, color: '#e8edf5' }}>HUB HEALTH FLEET</div></div>
+          <div><div style={{ fontSize: 13, fontWeight: 600, color: '#fafafa' }}>HUB HEALTH FLEET</div></div>
           <div className="hub-search-wrap">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
@@ -136,13 +136,12 @@ export function Landing() {
               const arel = d.activity_reliability ?? d.reliability;
               const hasAct = activity > 0;
               const rc = hasAct ? relColor(arel) : 'var(--muted)';
-              void relTag;
               const sl = hasAct ? statusLabel(arel) : 'No activity';
               const failCount = d.activity_fail ?? (d.total - d.success);
               const nsNS = d.daily && d.daily.length
                 ? (d.daily.reduce((s, dy) => s + (dy.ns || 0), 0) / d.daily.length).toFixed(1) + '%'
                 : '—';
-              const metric = (label: string, val: React.ReactNode, color = '#e8edf5') => (
+              const metric = (label: string, val: React.ReactNode, color = '#fafafa') => (
                 <div style={{ flex: 1, textAlign: 'center' }}>
                   <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', marginBottom: 8 }}>{label}</div>
                   <div style={{ fontSize: 15, color, fontWeight: 700 }}>{val}</div>
@@ -152,7 +151,7 @@ export function Landing() {
               return (
                 <div key={h} className="hub-grid-card" onClick={() => openHub(h)}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: 16, marginBottom: 16 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#e8edf5', fontFamily: 'monospace', letterSpacing: '0.5px' }}>{h.toUpperCase()}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#fafafa', fontFamily: 'monospace', letterSpacing: '0.5px' }}>{h.toUpperCase()}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface)', border: `1px solid ${rc}`, borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 500 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: rc, display: 'inline-block' }} />
                       <span style={{ color: rc }}>{sl}</span>

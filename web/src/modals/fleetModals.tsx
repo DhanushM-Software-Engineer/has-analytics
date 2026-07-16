@@ -10,7 +10,7 @@ const td: React.CSSProperties = { padding: '10px 8px', borderBottom: '1px solid 
 export function DebugHeader({ metric, formula }: { metric: string; formula: string }) {
   return (<>
     <div style={{ fontSize: 10, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4, fontWeight: 'normal', marginTop: -24 }}>Debug View</div>
-    <div style={{ fontSize: 18, fontWeight: 700, color: '#e8edf5', marginBottom: 8 }}>{metric}</div>
+    <div style={{ fontSize: 18, fontWeight: 700, color: '#fafafa', marginBottom: 8 }}>{metric}</div>
     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 24, fontFamily: 'monospace' }}>Formula: {formula}</div>
   </>);
 }
@@ -21,7 +21,7 @@ export function StatCells({ cells }: { cells: { label: string; val: ReactNode; c
       {cells.map((c) => (
         <div key={c.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: 16, textAlign: 'center' }}>
           <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 700, marginBottom: 8 }}>{c.label}</div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: c.color || '#e8edf5' }}>{c.val}</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: c.color || '#fafafa' }}>{c.val}</div>
         </div>
       ))}
     </div>
@@ -32,7 +32,7 @@ export function BreakdownBox({ title, children }: { title: string; children: Rea
   return (<>
     <div style={{ height: 1, background: 'var(--border)', marginBottom: 20 }} />
     <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: 20, marginBottom: 20 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#e8edf5', marginBottom: 12 }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#fafafa', marginBottom: 12 }}>{title}</div>
       {children}
     </div>
   </>);
@@ -88,7 +88,7 @@ export function useFleetModal() {
                   <tr key={h}>
                     <td style={{ ...td, fontWeight: 600 }}>{h.toUpperCase()}</td>
                     <td style={{ ...td, color: rc, fontWeight: 600 }}>{d.reliability}%</td>
-                    <td style={{ ...td, color: '#e8edf5' }}>{f.toLocaleString()}</td>
+                    <td style={{ ...td, color: '#fafafa' }}>{f.toLocaleString()}</td>
                     <td style={td}><PillState color={rc} label={statusLabel(d.reliability)} /></td>
                     <td style={td}>
                       <button className="card-btn-view" style={{ padding: '4px 12px', fontSize: 10 }}

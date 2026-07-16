@@ -30,7 +30,7 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
       lcOpts = { hub, tab: 'all', ucFilter: 'Automation Run (Hub)', context: { label: 'Hub-Recorded Automation Runs', desc: `${hub.toUpperCase()} · ${u.hub_auto_total || 0} runs from ha_logs · ${dash.periodLabel()}` } };
       body = (
         <table style={{ fontSize: 12 }}><tbody>
-          <KV label="Formula"><code style={{ fontSize: 11, color: '#e8edf5' }}>{u.hub_auto_total || 0} runs ÷ {days} days = {u.hub_auto_per_day || 0}/day</code></KV>
+          <KV label="Formula"><code style={{ fontSize: 11, color: '#fafafa' }}>{u.hub_auto_total || 0} runs ÷ {days} days = {u.hub_auto_per_day || 0}/day</code></KV>
           <KV label="Hub-recorded runs (tile value)"><strong style={{ fontSize: 16 }}>{u.hub_auto_total || 0}</strong> <span style={{ fontSize: 10, color: 'var(--muted)' }}>ha_logs automation_triggered — recorded even when the app is closed</span></KV>
           <KV label="Per Day"><strong>{u.hub_auto_per_day || 0}</strong></KV>
           <KV label="Why hub-recorded?"><span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--muted)' }}>The app only observes changes while it is open, so its automation counts are inconsistent. The hub records every run.</span></KV>
@@ -41,7 +41,7 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
       lcOpts = { hub, tab: 'all', ucFilter: 'Scene Activated (Hub)', context: { label: 'Hub-Recorded Scene Activations', desc: `${hub.toUpperCase()} · ${u.hub_scene_total || 0} activations from ha_logs · ${dash.periodLabel()}` } };
       body = (
         <table style={{ fontSize: 12 }}><tbody>
-          <KV label="Formula"><code style={{ fontSize: 11, color: '#e8edf5' }}>{u.hub_scene_total || 0} activations ÷ {days} days = {u.hub_scene_per_day || 0}/day</code></KV>
+          <KV label="Formula"><code style={{ fontSize: 11, color: '#fafafa' }}>{u.hub_scene_total || 0} activations ÷ {days} days = {u.hub_scene_per_day || 0}/day</code></KV>
           <KV label="Hub-recorded activations (tile value)"><strong style={{ fontSize: 16 }}>{u.hub_scene_total || 0}</strong> <span style={{ fontSize: 10, color: 'var(--muted)' }}>ha_logs scene call_service — recorded even when the app is closed</span></KV>
           <KV label="Per Day"><strong>{u.hub_scene_per_day || 0}</strong></KV>
           <KV label="Why hub-recorded?"><span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--muted)' }}>The app only observes activations while it is open and can log state-refresh bursts as activations, so its scene counts are inconsistent. The hub records every activation.</span></KV>
@@ -175,16 +175,16 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
         </h3>
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 12, flexWrap: 'wrap' }}>
-          {legendSw('#9d65c9', 'HUB')}
-          {legendSw('#3d82f0', 'APP (Local)')}
-          {legendSw('#d4961f', 'DOCK')}
-          {legendSw('#1fa355', 'APP (Remote)')}
+          {legendSw('#a78bfa', 'HUB')}
+          {legendSw('#6366f1', 'APP (Local)')}
+          {legendSw('#f59e0b', 'DOCK')}
+          {legendSw('#10b981', 'APP (Remote)')}
         </div>
         <div className="chart-box" style={{ height: 260 }}>
           <Doughnut
             data={{
               labels: srcLabels,
-              datasets: [{ data: srcData, backgroundColor: ['#3d82f0', '#1fa355', '#d4961f', '#9d65c9'], borderWidth: 0 }],
+              datasets: [{ data: srcData, backgroundColor: ['#6366f1', '#10b981', '#f59e0b', '#a78bfa'], borderWidth: 0 }],
             }}
             options={{
               responsive: true, maintainAspectRatio: false, cutout: '65%',
@@ -218,18 +218,18 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
         </h3>
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 12, flexWrap: 'wrap' }}>
-          {legendSw('#9d65c9', 'HUB')}
-          {legendSw('#3d82f0', 'APP')}
-          {legendSw('#d4961f', 'DOCK')}
+          {legendSw('#a78bfa', 'HUB')}
+          {legendSw('#6366f1', 'APP')}
+          {legendSw('#f59e0b', 'DOCK')}
         </div>
         <div className="chart-box" style={{ height: 260 }}>
           <Bar
             data={{
               labels: daily.map((x) => { const p = x.date.split('-'); return `${p[2]}-${p[1]}`; }),
               datasets: [
-                { label: 'HUB', data: daily.map((x) => x.hub || 0), backgroundColor: '#9d65c9' },
-                { label: 'APP', data: daily.map((x) => x.app || 0), backgroundColor: '#3d82f0' },
-                { label: 'DOCK', data: daily.map((x) => x.dock || 0), backgroundColor: '#d4961f' },
+                { label: 'HUB', data: daily.map((x) => x.hub || 0), backgroundColor: '#a78bfa' },
+                { label: 'APP', data: daily.map((x) => x.app || 0), backgroundColor: '#6366f1' },
+                { label: 'DOCK', data: daily.map((x) => x.dock || 0), backgroundColor: '#f59e0b' },
               ],
             }}
             options={{
@@ -242,9 +242,9 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
                 dash.showModal(`Usage — ${x.date}`, (<>
                   <table style={{ fontSize: 12, marginBottom: 4 }}><tbody>
                     <KV label="Date"><strong>{x.date}</strong></KV>
-                    <KV label="App"><strong style={{ color: '#3d82f0' }}>{x.app || 0}</strong></KV>
-                    <KV label="Dock"><strong style={{ color: '#d4961f' }}>{x.dock || 0}</strong></KV>
-                    <KV label="Hub"><strong style={{ color: '#9d65c9' }}>{x.hub || 0}</strong> <span style={{ fontSize: 10, color: 'var(--muted)' }}>(direct + automations + scenes)</span></KV>
+                    <KV label="App"><strong style={{ color: '#6366f1' }}>{x.app || 0}</strong></KV>
+                    <KV label="Dock"><strong style={{ color: '#f59e0b' }}>{x.dock || 0}</strong></KV>
+                    <KV label="Hub"><strong style={{ color: '#a78bfa' }}>{x.hub || 0}</strong> <span style={{ fontSize: 10, color: 'var(--muted)' }}>(direct + automations + scenes)</span></KV>
                     <KV label="Total"><strong style={{ fontSize: 16 }}>{tot}</strong></KV>
                   </tbody></table>
                   <LcCta label={`View ${x.date} in Log Center →`}
@@ -317,9 +317,9 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
             </div>
             <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
             {[
-              { l: 'Toggle', v: toggleCnt, c: '#3d82f0' },
-              { l: 'Increment', v: incCnt, c: '#1fa355' },
-              { l: 'Decrement', v: decCnt, c: '#e04545' },
+              { l: 'Toggle', v: toggleCnt, c: '#6366f1' },
+              { l: 'Increment', v: incCnt, c: '#10b981' },
+              { l: 'Decrement', v: decCnt, c: '#ef4444' },
             ].map((row) => (
               <div key={row.l} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -334,7 +334,7 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
               <Pie
                 data={{
                   labels: ['Toggle', 'Increment', 'Decrement'],
-                  datasets: [{ data: [toggleCnt, incCnt, decCnt], backgroundColor: ['#3d82f0', '#1fa355', '#e04545'], borderWidth: 0 }],
+                  datasets: [{ data: [toggleCnt, incCnt, decCnt], backgroundColor: ['#6366f1', '#10b981', '#ef4444'], borderWidth: 0 }],
                 }}
                 options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
               />

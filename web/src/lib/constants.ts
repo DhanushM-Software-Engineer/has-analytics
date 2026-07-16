@@ -54,9 +54,9 @@ export function ucLabel(uc: string): string {
 }
 
 export const LATENCY_BUCKETS = [
-  { k: '<500ms', color: '#1fa355', label: '<500ms' },
-  { k: '500-1000ms', color: '#d4961f', label: '500ms–1s' },
-  { k: '1-2s', color: '#e07a20', label: '1–2s' },
-  { k: '2-5s', color: '#e04545', label: '2–5s' },
-  { k: '>5s', color: '#b02a2a', label: '>5s' },
+  { k: '<500ms', color: '#10b981', label: '<500ms' },
+  { k: '500-1000ms', color: '#f59e0b', label: '500ms–1s' },
+  { k: '1-2s', color: '#f97316', label: '1–2s' },
+  { k: '2-5s', color: '#ef4444', label: '2–5s' },
+  { k: '>5s', color: '#be123c', label: '>5s' },
 ] as const;

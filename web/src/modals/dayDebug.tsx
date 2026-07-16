@@ -18,7 +18,7 @@ function Tile({ label, val, color }: { label: string; val: ReactNode; color?: st
   return (
     <div style={{ flex: 1, minWidth: 100, background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 14px' }}>
       <div style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '.6px', color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: color || '#e8edf5' }}>{val}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: color || '#fafafa' }}>{val}</div>
     </div>
   );
 }
@@ -55,7 +55,7 @@ export function useShowDayDebug(hub: string) {
     } else if (focus === 'speed') {
       tiles = (<>
         <Tile label="Total Events" val={day.total} />
-        <Tile label="P50" val={fmtOrDash(day.p50, 'ms')} color={(day.p50 ?? 0) > 800 ? 'var(--yellow)' : '#e8edf5'} />
+        <Tile label="P50" val={fmtOrDash(day.p50, 'ms')} color={(day.p50 ?? 0) > 800 ? 'var(--yellow)' : '#fafafa'} />
         <Tile label="P95" val={fmtOrDash(day.p95, 'ms')} />
         <Tile label="Avg" val={fmtOrDash(day.avg != null ? Math.round(day.avg) : null, 'ms')} />
       </>);
@@ -63,7 +63,7 @@ export function useShowDayDebug(hub: string) {
       tiles = (<>
         <Tile label="Total Events" val={day.total} />
         <Tile label="Reliability" val={fmtOrDash(day.rel, '%')} color={relC} />
-        <Tile label="P50 Latency" val={fmtOrDash(day.p50, 'ms')} color={(day.p50 ?? 0) > 800 ? 'var(--yellow)' : '#e8edf5'} />
+        <Tile label="P50 Latency" val={fmtOrDash(day.p50, 'ms')} color={(day.p50 ?? 0) > 800 ? 'var(--yellow)' : '#fafafa'} />
         <Tile label="North Star" val={day.ns != null ? (+day.ns).toFixed(1) + '%' : '—'} color={nsC} />
       </>);
     }

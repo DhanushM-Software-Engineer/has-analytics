@@ -117,7 +117,7 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
         : 'The hub is not recording timing values for this segment yet — every event reports 0ms. This is a hub-side data collection gap, not a dashboard issue. Latency stats will appear automatically once the hub firmware records real timestamps.';
       dash.showModal(`${sg.name} — No Data`, (<>
         <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '12px 16px', marginBottom: 14, fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
-          <strong style={{ color: '#e8edf5' }}>{sg.name}</strong><br />{sg.desc}
+          <strong style={{ color: '#fafafa' }}>{sg.name}</strong><br />{sg.desc}
         </div>
         <div style={{ background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 6, padding: '12px 16px', fontSize: 11, lineHeight: 1.7 }}>
           <strong style={{ color: 'var(--yellow)' }}>Why is there no data?</strong><br />
@@ -139,12 +139,12 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
         <tbody>
           <KV label="Segment"><strong>{sg.name}</strong></KV>
           <KV label="Description">{sg.desc}</KV>
-          <KV label="Formula"><code style={{ fontSize: 11, color: '#e8edf5' }}>{fm.f}</code></KV>
+          <KV label="Formula"><code style={{ fontSize: 11, color: '#fafafa' }}>{fm.f}</code></KV>
           <KV label="Source"><span style={{ fontSize: 11, color: 'var(--muted)' }}>{fm.src}</span></KV>
           <KV label="Aggregation"><span style={{ fontSize: 11, color: 'var(--muted)' }}>P50/P95 = 50th/95th percentile · Avg = mean · Std Dev = σ, across all events in the period</span></KV>
           <KV label="Notes"><span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--muted)' }}>{fm.note}</span></KV>
           <KV label="Avg">{sg.val.avg}ms</KV>
-          <KV label="P50"><strong style={{ fontSize: 16, color: isSlow ? 'var(--yellow)' : '#e8edf5' }}>{sg.val.p50}ms</strong></KV>
+          <KV label="P50"><strong style={{ fontSize: 16, color: isSlow ? 'var(--yellow)' : '#fafafa' }}>{sg.val.p50}ms</strong></KV>
           <KV label="P95">
             <span style={{ color: sg.val.p95 > 1000 ? 'var(--red)' : sg.val.p95 > 500 ? 'var(--yellow)' : 'var(--green)' }}>{sg.val.p95}ms</span>
           </KV>
@@ -163,7 +163,7 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
 
   // ── Speed distribution buckets ────────────────────────────────────────────
   const bucketKeys = Object.keys(s.buckets) as (keyof typeof s.buckets)[];
-  const bucketColors = ['#1fa355', '#d4961f', '#e07a20', '#e04545', '#b02a2a'];
+  const bucketColors = ['#10b981', '#f59e0b', '#f97316', '#ef4444', '#be123c'];
 
   const openBucketModal = (k: string) => {
     const evs = (s.bucket_events as Record<string, Record<string, unknown>[]>)[k] || [];
@@ -239,13 +239,13 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
     const lcOpts = { hub, tab: 'all' as const, ucFilter: uc === 'Hub Control (Direct)' ? 'Hub Control' : uc, context: { label: `${lbl} — Events`, desc: `${hub.toUpperCase()} · P50: ${v.p50}ms · P95: ${v.p95}ms · ${v.count} total` } };
     dash.showModal(`${lbl} — Speed Detail`, (<>
       <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, padding: '10px 14px', marginBottom: 14, fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
-        <strong style={{ color: '#e8edf5' }}>{lbl}</strong><br />{desc}
+        <strong style={{ color: '#fafafa' }}>{lbl}</strong><br />{desc}
       </div>
       <table style={{ fontSize: 12, marginBottom: 14 }}>
         <tbody>
           <KV label="Total Events"><strong style={{ fontSize: 16 }}>{v.count}</strong></KV>
           <KV label="Avg">{v.avg}ms</KV>
-          <KV label="P50 (median)"><strong style={{ fontSize: 16, color: '#e8edf5' }}>{v.p50}ms</strong></KV>
+          <KV label="P50 (median)"><strong style={{ fontSize: 16, color: '#fafafa' }}>{v.p50}ms</strong></KV>
           <KV label="P95">
             <span style={{ color: v.p95 > 1000 ? 'var(--red)' : v.p95 > 500 ? 'var(--yellow)' : 'var(--green)' }}>
               {v.p95}ms{v.p95 > 1000 ? ' — CRITICAL' : v.p95 > 500 ? ' — WARNING' : ''}
@@ -298,16 +298,16 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
         <h3>AVG & SD TREND<InfoButton k="avg_sd_trend" /></h3>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 24, height: 2, background: '#3d82f0', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3d82f0' }} />
+            <div style={{ width: 24, height: 2, background: '#6366f1', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#6366f1' }} />
             </div>
             <span>Avg Speed (ms)</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 24, height: 0, borderTop: '2px dashed #1fa355' }} /><span>AVG + SD</span>
+            <div style={{ width: 24, height: 0, borderTop: '2px dashed #10b981' }} /><span>AVG + SD</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 24, height: 0, borderTop: '2px dashed #e04545' }} /><span>AVG - SD</span>
+            <div style={{ width: 24, height: 0, borderTop: '2px dashed #ef4444' }} /><span>AVG - SD</span>
           </div>
         </div>
         <div className="chart-box" style={{ height: 238 }}>
@@ -315,9 +315,9 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
             data={{
               labels: trendDates,
               datasets: [
-                { label: 'Avg Speed (ms)', data: intAvg, borderColor: '#3d82f0', backgroundColor: 'rgba(61,130,240,0.1)', tension: 0.3, fill: false, pointRadius: 3, spanGaps: true },
-                { label: 'AVG + SD', data: intAvg.map((a, i) => { const sd = intSd[i]; return a != null && sd != null ? Math.round(a + sd) : null; }), borderColor: '#1fa355', backgroundColor: 'transparent', tension: 0.3, fill: false, pointRadius: 0, borderDash: [3, 3], spanGaps: true },
-                { label: 'AVG - SD', data: intAvg.map((a, i) => { const sd = intSd[i]; return a != null && sd != null ? Math.max(0, Math.round(a - sd)) : null; }), borderColor: '#e04545', backgroundColor: 'transparent', tension: 0.3, fill: false, pointRadius: 0, borderDash: [3, 3], spanGaps: true },
+                { label: 'Avg Speed (ms)', data: intAvg, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.1)', tension: 0.3, fill: false, pointRadius: 3, spanGaps: true },
+                { label: 'AVG + SD', data: intAvg.map((a, i) => { const sd = intSd[i]; return a != null && sd != null ? Math.round(a + sd) : null; }), borderColor: '#10b981', backgroundColor: 'transparent', tension: 0.3, fill: false, pointRadius: 0, borderDash: [3, 3], spanGaps: true },
+                { label: 'AVG - SD', data: intAvg.map((a, i) => { const sd = intSd[i]; return a != null && sd != null ? Math.max(0, Math.round(a - sd)) : null; }), borderColor: '#ef4444', backgroundColor: 'transparent', tension: 0.3, fill: false, pointRadius: 0, borderDash: [3, 3], spanGaps: true },
               ],
             }}
             options={{
@@ -355,7 +355,7 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
           const box = (label: string, value: number, isP50: boolean) => (
             <div key={label} style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, padding: 12, width: 100, textAlign: 'center', background: 'rgba(0,0,0,0.2)' }}>
               <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 4, textTransform: 'uppercase' }}>{label}</div>
-              <div style={{ fontSize: 16, fontWeight: 'bold', color: isP50 ? '#f39c12' : '#ffffff', marginBottom: 6 }}>{value}ms</div>
+              <div style={{ fontSize: 16, fontWeight: 'bold', color: isP50 ? '#fbbf24' : '#ffffff', marginBottom: 6 }}>{value}ms</div>
               <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>Target &lt;{sg.target.val}ms</div>
             </div>
           );
@@ -389,8 +389,8 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
       </h3>
       <p style={{ color: 'var(--muted)', fontSize: 10, margin: '-4px 0 14px' }}>
         Each card shows the latency distribution for that trigger type. Bar colours:{' '}
-        <span style={{ color: '#1fa355' }}>■</span> &lt;500ms <span style={{ color: '#d4961f' }}>■</span> 500ms–1s{' '}
-        <span style={{ color: '#e07a20' }}>■</span> 1–2s <span style={{ color: '#e04545' }}>■</span> &gt;2s
+        <span style={{ color: '#10b981' }}>■</span> &lt;500ms <span style={{ color: '#f59e0b' }}>■</span> 500ms–1s{' '}
+        <span style={{ color: '#f97316' }}>■</span> 1–2s <span style={{ color: '#ef4444' }}>■</span> &gt;2s
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 14 }}>
         {Object.keys(perUc).sort().map((uc) => {
@@ -407,7 +407,7 @@ export function SpeedTab({ hub, d }: { hub: string; d: HubDetail }) {
           return (
             <div key={uc} className="uc-card" onClick={() => openUcDetail(uc)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#e8edf5', lineHeight: 1.3, paddingRight: 8 }}>{ucLabel(uc)}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#fafafa', lineHeight: 1.3, paddingRight: 8 }}>{ucLabel(uc)}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                   <InfoButton k="uc_speed_metrics" plain />
                   <span className={`tag ${sc}`}>{st}</span>

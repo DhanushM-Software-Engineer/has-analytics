@@ -79,8 +79,8 @@ function HeatRow({ day, counts, det, maxV, isFail, onCell }: {
         const v = counts[k] || 0;
         const intensity = v / maxV;
         const bg = intensity > 0
-          ? (isFail ? `rgba(224,69,69,${0.1 + intensity * 0.8})` : `rgba(61,130,240,${0.08 + intensity * 0.72})`)
-          : '#0c1018';
+          ? (isFail ? `rgba(239,68,68,${0.1 + intensity * 0.8})` : `rgba(99,102,241,${0.08 + intensity * 0.72})`)
+          : '#101013';
         const dd = det[k] || { app: 0, remote: 0, dock: 0, hub: 0 };
         return (
           <div key={h} className="heatmap-cell"

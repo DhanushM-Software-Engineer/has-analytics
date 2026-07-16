@@ -5,7 +5,8 @@ fleet — with the Matter server's **Node** and **Thread** views embedded direct
 
 One project, two parts:
 
-1. **Analytics dashboard** — FastAPI backend + **React + TypeScript** (Vite, Chart.js)
+1. **Analytics dashboard** — FastAPI backend + **React + TypeScript** (Vite, Tailwind CSS,
+   Chart.js, Lucide icons)
    single-page UI. Reliability, speed, usage and per-device telemetry, all read live
    from BigQuery (`schnell-home-automation.schnell_analytics`).
 2. **Embedded Matter UI** — the Node (device list) and Thread (mesh) views from the

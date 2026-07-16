@@ -131,7 +131,7 @@ export function LogCenter({ opts }: { opts: LcOpts }) {
                 <button className="btn" onClick={dash.lcGoBack} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '5px 12px' }}>
                   <span style={{ fontSize: 14, lineHeight: 1 }}>←</span>
                   <span>
-                    <div style={{ fontWeight: 600, color: '#e8edf5' }}>
+                    <div style={{ fontWeight: 600, color: '#fafafa' }}>
                       {origin.view === 'detail' ? `${origin.hub?.toUpperCase()} · ${tabNames[origin.tabId ?? 'overall'] ?? 'Overview'}` : 'Fleet Overview'}
                     </div>
                     <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>Return to previous view</div>
@@ -406,7 +406,7 @@ function TimingExpand({ ev, hubAppP50 }: { ev: PoolEvent; hubAppP50: number | nu
           <div className="tp-node"><div className={`tp-node-dot ${lastDot}`} /><div className="tp-node-label">App Updated</div></div>
         </div>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '8px 12px', fontSize: 10, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
-          <strong style={{ color: '#e8edf5' }}>Segment breakdown:</strong><br />
+          <strong style={{ color: '#fafafa' }}>Segment breakdown:</strong><br />
           <strong>App Sends CMD ({s1 !== null ? `${s1}ms` : '—'}):</strong> App processes tap and dispatches REST command<br />
           <strong>App→Hub Transit ({s2 !== null ? `${s2}ms` : '—'}):</strong> Command travels to hub · Hub receives and ACKs<br />
           <strong>Hub→Device→App ({s3 !== null ? `${s3}ms` : '—'}):</strong> Hub → SNAP device (Thread mesh) → Device activates → State reflected to hub → Hub pushes state to app via WebSocket
@@ -445,7 +445,7 @@ function TimingExpand({ ev, hubAppP50 }: { ev: PoolEvent; hubAppP50: number | nu
           </div>
         </div>
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 4, padding: '8px 12px', fontSize: 10, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
-          <strong style={{ color: '#e8edf5' }}>Flow:</strong> Hub issues Matter command → Thread mesh transit → SNAP device activates → State change reflected back to hub<br />
+          <strong style={{ color: '#fafafa' }}>Flow:</strong> Hub issues Matter command → Thread mesh transit → SNAP device activates → State change reflected back to hub<br />
           <strong>Hub→Thread Mesh ({s1 !== null ? `${s1}ms` : '—'}):</strong> Hub dispatches Matter protocol command<br />
           <strong>Device Activates ({s2 !== null ? `${s2}ms` : '—'}):</strong> SNAP device receives, activates, and reflects state back to hub<br />
           <strong style={{ color: 'var(--blue)' }}>After this point:</strong> Hub immediately pushes state to app via WebSocket (~{hubAppP50 ? `${hubAppP50}ms` : '—'} average)

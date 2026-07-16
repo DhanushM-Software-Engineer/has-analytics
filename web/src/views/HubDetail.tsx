@@ -22,7 +22,7 @@ const TABS: { id: HubTabId; label: string }[] = [
 
 const titleStyle: React.CSSProperties = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  fontSize: 12, fontWeight: 700, color: '#e8edf5',
+  fontSize: 12, fontWeight: 700, color: '#fafafa',
 };
 
 export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
@@ -46,7 +46,7 @@ export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20, gap: 12 }}>
         <button className="btn" onClick={showLanding} style={{ padding: '6px 12px', fontSize: 16, lineHeight: 1 }}>←</button>
-        <h2 style={{ fontSize: 20, color: '#e8edf5', fontWeight: 700, margin: 0, fontFamily: 'monospace' }}>{hub.toUpperCase()}</h2>
+        <h2 style={{ fontSize: 20, color: '#fafafa', fontWeight: 700, margin: 0, fontFamily: 'monospace' }}>{hub.toUpperCase()}</h2>
       </div>
 
       <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(5,1fr)' }}>
@@ -67,7 +67,7 @@ export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
         </div>
         <div className="kpi" onClick={showSpeed}>
           <div className="label" style={titleStyle}>P50 SPEED<InfoButton k="hub_latency" /></div>
-          <div className="value" style={{ color: d.speed.local_e2e.p50 > 800 ? 'var(--yellow)' : '#e8edf5' }}>
+          <div className="value" style={{ color: d.speed.local_e2e.p50 > 800 ? 'var(--yellow)' : '#fafafa' }}>
             {d.total && d.speed.local_e2e.p50 != null ? `${d.speed.local_e2e.p50}ms` : '—'}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
@@ -91,14 +91,14 @@ export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
       </div>
 
       {!act ? (
-        <div style={{ background: 'rgba(212,150,31,.08)', border: '1px solid rgba(212,150,31,.35)', borderRadius: 8, padding: '14px 18px', marginBottom: 16 }}>
+        <div style={{ background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.35)', borderRadius: 8, padding: '14px 18px', marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--yellow)', marginBottom: 3 }}>No activity recorded in {dash.periodLabel()}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
             No app commands, dock presses, scene activations, or automation runs from any source in this date range. Pick a range that includes days with activity.
           </div>
         </div>
       ) : !d.total ? (
-        <div style={{ background: 'rgba(212,150,31,.08)', border: '1px solid rgba(212,150,31,.35)', borderRadius: 8, padding: '14px 18px', marginBottom: 16 }}>
+        <div style={{ background: 'rgba(245,158,11,.08)', border: '1px solid rgba(245,158,11,.35)', borderRadius: 8, padding: '14px 18px', marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue)', marginBottom: 3 }}>No app commands in {dash.periodLabel()} — showing hub-recorded activity</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
             The app initiated nothing in this range, so app reliability/latency read “—”. The {act} event(s) shown come from the hub (dock presses, scene activations, automation runs) — see the heatmap, Usage, and Log Center.
@@ -128,7 +128,7 @@ function MatterEmbed({ kind }: { kind: 'node' | 'thread' }) {
   return (
     <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#e8edf5' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#fafafa' }}>
           Matter Server — {label}{' '}
           <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 11 }}>· live from hub {MATTER_UI.hub}</span>
         </div>

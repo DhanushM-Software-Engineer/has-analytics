@@ -48,10 +48,10 @@ export function OverallTab({ hub, d }: { hub: string; d: HubDetail }) {
             data={{
               labels: dates,
               datasets: [
-                { label: 'Hub Events', data: daily.map((r) => r.hub), backgroundColor: '#9353d4', order: 4, stack: 'Stack 0' },
-                { label: 'App Events', data: daily.map((r) => r.app), backgroundColor: '#3d82f0', order: 3, stack: 'Stack 0' },
-                { label: 'Dock Events', data: daily.map((r) => r.dock), backgroundColor: '#d4961f', order: 2, stack: 'Stack 0' },
-                { label: 'Reliability %', data: daily.map((r) => r.rel), type: 'line' as const, borderColor: '#1fa355', backgroundColor: '#1fa355', yAxisID: 'y1', tension: 0.3, pointRadius: 3, borderWidth: 1.5, borderDash: [3, 3], order: 1 },
+                { label: 'Hub Events', data: daily.map((r) => r.hub), backgroundColor: '#8b5cf6', order: 4, stack: 'Stack 0' },
+                { label: 'App Events', data: daily.map((r) => r.app), backgroundColor: '#6366f1', order: 3, stack: 'Stack 0' },
+                { label: 'Dock Events', data: daily.map((r) => r.dock), backgroundColor: '#f59e0b', order: 2, stack: 'Stack 0' },
+                { label: 'Reliability %', data: daily.map((r) => r.rel), type: 'line' as const, borderColor: '#10b981', backgroundColor: '#10b981', yAxisID: 'y1', tension: 0.3, pointRadius: 3, borderWidth: 1.5, borderDash: [3, 3], order: 1 },
                 { label: 'Target %', data: dates.map(() => 97), type: 'line' as const, yAxisID: 'y1', borderColor: 'rgba(160,160,160,1)', borderDash: [3, 3], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, order: 0 },
               ],
             } as ChartData<'bar' | 'line', number[], string> as ChartData<'bar', number[], string>}
@@ -107,8 +107,8 @@ export function OverallTab({ hub, d }: { hub: string; d: HubDetail }) {
             data={{
               labels: dates,
               datasets: [
-                { label: 'P50 Speed (ms)', data: p50Arr, borderColor: '#d4961f', backgroundColor: 'rgba(212,150,31,.1)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: true, order: 1 },
-                { label: 'P95 Speed (ms)', data: p95Arr, borderColor: '#e74c3c', backgroundColor: 'rgba(231,76,60,0.1)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: true, order: 2 },
+                { label: 'P50 Speed (ms)', data: p50Arr, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.1)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: true, order: 1 },
+                { label: 'P95 Speed (ms)', data: p95Arr, borderColor: '#f43f5e', backgroundColor: 'rgba(231,76,60,0.1)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: true, order: 2 },
                 { label: 'Target (ms)', data: dates.map(() => 1000), borderColor: 'rgba(160,160,160,1)', borderDash: [3, 3], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, order: 0 },
               ],
             }}
@@ -163,7 +163,7 @@ export function OverallTab({ hub, d }: { hub: string; d: HubDetail }) {
             data={{
               labels: dates,
               datasets: [
-                { label: 'North Star %', data: nsArr, borderColor: '#3d82f0', backgroundColor: 'rgba(61,130,240,.1)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: true, order: 1 },
+                { label: 'North Star %', data: nsArr, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.1)', fill: true, tension: 0.3, pointRadius: 3, spanGaps: true, order: 1 },
                 { label: 'Target %', data: dates.map(() => 95), borderColor: 'rgba(160,160,160,1)', borderDash: [3, 3], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0, order: 0 },
               ],
             }}
@@ -212,9 +212,9 @@ export function OverallTab({ hub, d }: { hub: string; d: HubDetail }) {
             data={{
               labels: dates,
               datasets: [
-                { label: 'Hub Failures', data: daily.map((r) => r.failHub), backgroundColor: '#9353d4', order: 3, stack: 'Stack 0' },
-                { label: 'App Failures', data: daily.map((r) => r.failApp), backgroundColor: '#e04545', order: 2, stack: 'Stack 0' },
-                { label: 'Dock Failures', data: daily.map((r) => r.failDock), backgroundColor: '#d4961f', order: 1, stack: 'Stack 0' },
+                { label: 'Hub Failures', data: daily.map((r) => r.failHub), backgroundColor: '#8b5cf6', order: 3, stack: 'Stack 0' },
+                { label: 'App Failures', data: daily.map((r) => r.failApp), backgroundColor: '#ef4444', order: 2, stack: 'Stack 0' },
+                { label: 'Dock Failures', data: daily.map((r) => r.failDock), backgroundColor: '#f59e0b', order: 1, stack: 'Stack 0' },
               ],
             }}
             options={{

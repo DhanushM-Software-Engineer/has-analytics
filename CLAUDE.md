@@ -7,7 +7,9 @@ Schnell Fleet Analytics dashboard **plus** an embedded, trimmed Matter Node/Thre
 
 - **Schnell Fleet Debugging Dashboard** — a live, BigQuery-backed analytics dashboard
   for the Schnell / Home-Assistant smart-home fleet. FastAPI backend + a **React +
-  TypeScript** (Vite, Chart.js) single-page UI in `web/`. All data comes from BigQuery
+  TypeScript** (Vite, Tailwind CSS v4, Chart.js, Lucide icons) single-page UI in `web/`.
+  Design system v2 ("refined modern dark": zinc neutrals + indigo accent) lives in
+  `web/src/styles/global.css` — all colors flow from its CSS tokens. All data comes from BigQuery
   (`schnell_analytics`).
 - **Embedded Matter UI** — the Node and Thread views from the Matter server's own
   dashboard, trimmed to just those two features and **served by this app** at `/matter`.

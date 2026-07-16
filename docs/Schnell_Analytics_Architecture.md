@@ -154,7 +154,7 @@ venv/bin/uvicorn main:app --reload --host 0.0.0.0 --port 8080
 Analytics/
 ├── README.md                          Project overview & quick start
 ├── CLAUDE.md                          Guidance for Claude Code (whole project)
-├── web/                               DASHBOARD UI SOURCE — React + TypeScript (Vite, Chart.js)
+├── web/                               DASHBOARD UI SOURCE — React + TypeScript (Vite, Tailwind CSS, Chart.js)
 │   └── src/                           types/ api/ lib/ charts/ state/ components/ modals/ views/
 ├── public/                            BUILT output — what is served (never hand-edit)
 │   ├── index.html + assets/           Built React dashboard (from web/, via ./build-web.sh)

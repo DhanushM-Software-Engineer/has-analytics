@@ -22,8 +22,8 @@ Chart.register(
   CategoryScale, LinearScale, Filler, Legend, Tooltip,
 );
 
-Chart.defaults.color = '#5a7090';
-Chart.defaults.borderColor = '#1d2d40';
+Chart.defaults.color = '#7c7c89';
+Chart.defaults.borderColor = '#22222a';
 Chart.defaults.font.family = 'Inter';
 Chart.defaults.font.size = 10;
 
@@ -40,11 +40,10 @@ function lineDotCanvas(color: string, dashed: boolean, dot: boolean): HTMLCanvas
 }
 
 export const legendPt = {
-  rel: () => lineDotCanvas('#1fa355', true, true),
+  rel: () => lineDotCanvas('#10b981', true, true),
   tgt: () => lineDotCanvas('rgba(160,160,160,1)', true, false),
-  p50: () => lineDotCanvas('#d4961f', false, true),
-  p95: () => lineDotCanvas('#e74c3c', false, true),
-  ns: () => lineDotCanvas('#3d82f0', false, true),
+  p50: () => lineDotCanvas('#f59e0b', false, true),
+  p95: () => lineDotCanvas('#f43f5e', false, true),
+  ns: () => lineDotCanvas('#6366f1', false, true),
 };
 
-export { Chart };

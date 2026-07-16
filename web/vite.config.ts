@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // Schnell Fleet Analytics — React UI build.
 //
@@ -10,7 +11,7 @@ import react from '@vitejs/plugin-react';
 //        Hosting will serve dist/ (public/matter/ is deployed separately and
 //        unchanged — the Node/Thread tabs keep pointing at /matter).
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {

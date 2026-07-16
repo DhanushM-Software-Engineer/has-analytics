@@ -1,5 +1,5 @@
 /** Shared small components: Modal, InfoButton, TargetPill, EventTable,
- *  StatusPill, KV row — visually identical to the vanilla templates. */
+ *  KV row — visually identical to the vanilla templates. */
 import type { CSSProperties, ReactNode } from 'react';
 import { useDash } from '../state/DashboardContext';
 import { INFO, infoBodyHtml } from '../lib/info';
@@ -59,19 +59,6 @@ export function TargetPill({ t }: { t: Target }) {
     }}>
       Target {t.lbl}
     </span>
-  );
-}
-
-/** Coloured status pill (Healthy / Warning / Critical / …). */
-export function StatusPill({ color, label }: { color: string; label: string }) {
-  return (
-    <div style={{
-      display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface)',
-      border: `1px solid ${color}`, borderRadius: 12, padding: '3px 8px', fontSize: 10,
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-      <span style={{ color }}>{label}</span>
-    </div>
   );
 }
 

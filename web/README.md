@@ -1,8 +1,13 @@
-# Schnell Fleet Analytics — React UI (`web/`)
+# Schnell Fleet Analytics — Dashboard UI (`web/`)
 
-TypeScript + React port of the dashboard in `public/`. **Same FastAPI backend,
-same endpoints, same JSON** — this is a different client, not a different system.
-The vanilla dashboard in `public/` remains the live UI until cutover.
+**This is THE dashboard.** React 18 + TypeScript + Vite + Tailwind CSS v4 +
+Chart.js + Lucide icons. `public/` is its **build output** (via `../build-web.sh`)
+— that's what FastAPI, Firebase and the Dockerfile serve. Never hand-edit `public/`.
+
+**Design system v2 — "refined modern dark"**: zinc neutrals + indigo accent
+(Linear/Vercel-style). All tokens live in `src/styles/global.css` (`:root` CSS
+variables + the component classes); chart palette maps to the same accents.
+To retheme, change the tokens — components reference `var(--…)` throughout.
 
 ## Run
 
@@ -36,6 +41,7 @@ src/
 │   ├── format.ts         Formatting/classification helpers
 │   ├── constants.ts      Targets, Matter UI config, use-case labels
 │   └── info.ts           ⓘ info-modal texts (ported verbatim)
+├── styles/global.css     Design system v2 — tokens + all component classes
 ├── charts/setup.ts       Chart.js registration + global defaults
 ├── state/DashboardContext.tsx  Date range, hub data, view routing, modal
 ├── components/           Modal, InfoButton, EventTable, Heatmap, …
@@ -62,8 +68,9 @@ src/
   thousands of events render smoothly.
 - Server data is cached by TanStack Query (5 min, matching the backend cache).
 
-## Cutover (later, when parity is signed off)
+## Ship a UI change
 
-Point Firebase Hosting / the Dockerfile at `web/dist/` instead of `public/`
-(keep `public/matter/` served at `/matter` as-is). Until then nothing changes
-for the live dashboard.
+```bash
+../build-web.sh      # typecheck + build → refresh ../public/ (keeps matter/ + 404.html)
+../deploy.sh         # deploy live (Cloud Run + Firebase)
+```
