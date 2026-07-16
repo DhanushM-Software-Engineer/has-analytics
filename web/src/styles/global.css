@@ -372,8 +372,6 @@ tr.clickable:hover { background: var(--surface2); }
 }
 .lc-tab:hover { border-color: var(--border2); color: var(--text); }
 .lc-tab.active { background: var(--blue-soft); border-color: rgba(99,102,241,.5); color: #c7d2fe; }
-.lc-tab.tab-fail.active { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.45); color: #f87171; }
-.lc-tab.tab-slow.active { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.45); color: #fbbf24; }
 .lc-filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .lc-filter-select {
   background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
@@ -420,11 +418,8 @@ tr.clickable:hover { background: var(--surface2); }
 }
 .lc-table td { border-bottom: 1px solid var(--border); padding: 8px 10px; vertical-align: middle; }
 .lc-row { cursor: pointer; transition: background .1s var(--ease); }
-.lc-row-fail { background: rgba(239,68,68,.05); }
-.lc-row-fail:hover { background: rgba(239,68,68,.1) !important; }
-.lc-row-slow { background: rgba(245,158,11,.05); }
-.lc-row-slow:hover { background: rgba(245,158,11,.1) !important; }
-.lc-row-ok:hover { background: var(--surface2) !important; }
+.lc-row-fail, .lc-row-slow, .lc-row-ok { background: transparent; }
+.lc-row-fail:hover, .lc-row-slow:hover, .lc-row-ok:hover { background: var(--surface2) !important; }
 .lc-row.lc-expanded { background: var(--surface2) !important; border-bottom: none; }
 .lc-expand-row td { padding: 0; border-bottom: 2px solid var(--border2) !important; }
 

@@ -1,6 +1,6 @@
 /** App shell — header, nav bar with date-range picker, view routing, modal host. */
 import { useEffect, useState } from 'react';
-import { Activity, LayoutGrid, ScrollText, CalendarRange, LoaderCircle } from 'lucide-react';
+import { LayoutGrid, ScrollText, CalendarRange, LoaderCircle } from 'lucide-react';
 import { DashboardProvider, useDash } from './state/DashboardContext';
 import { ModalHost } from './components/common';
 import { Landing } from './views/Landing';
@@ -20,11 +20,12 @@ function Shell() {
       <div className="header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
-            width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-            boxShadow: '0 4px 16px -4px rgba(99,102,241,.6)',
+            width: 36, height: 36, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#fff', padding: 4,
+            boxShadow: '0 0 0 1px var(--border2), 0 4px 16px -4px rgba(0,0,0,.5)',
           }}>
-            <Activity size={17} color="#fff" strokeWidth={2.4} />
+            <img src="/assets/images/schnell_logo.png" alt="Schnell"
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
           </div>
           <div>
             <h1>Schnell Fleet Analytics</h1>

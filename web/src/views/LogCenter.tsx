@@ -148,15 +148,12 @@ export function LogCenter({ opts }: { opts: LcOpts }) {
               </div>
             </div>
           </div>
-          <div className="lc-hub-pills">
-            <button className={`lc-hub-pill ${!st.hub ? 'active' : ''}`} onClick={() => { setSt((s) => ({ ...s, hub: null })); setExpanded(null); }}>All Hubs</button>
-            {Object.keys(D).map((h) => (
-              <button key={h} className={`lc-hub-pill ${st.hub === h ? 'active' : ''}`} onClick={() => { setSt((s) => ({ ...s, hub: h })); setExpanded(null); }}>
-                <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: relColor(D[h]!.reliability), marginRight: 4, verticalAlign: 'middle' }} />
-                {h.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          <HubDropdown
+            hubs={Object.keys(D)}
+            dotColor={(h) => relColor(D[h]!.activity_reliability ?? D[h]!.reliability)}
+            value={st.hub}
+            onChange={(h) => { setSt((s) => ({ ...s, hub: h })); setExpanded(null); }}
+          />
         </div>
         <div className="lc-tabs-row">
           <div className="lc-tabs">
@@ -245,6 +242,70 @@ export function LogCenter({ opts }: { opts: LcOpts }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Hub picker dropdown — colour-coded status dot per hub (same colours as the
+ *  old pills: green/yellow/red by reliability). "All Hubs" = no filter. */
+function HubDropdown({ hubs, dotColor, value, onChange }: {
+  hubs: string[];
+  dotColor: (hub: string) => string;
+  value: string | null;
+  onChange: (hub: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const dot = (c: string) => (
+    <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: c, flexShrink: 0, boxShadow: `0 0 6px ${c}` }} />
+  );
+  const label = value ? value.toUpperCase() : 'All Hubs';
+  return (
+    <div style={{ position: 'relative' }}>
+      <button className="lc-hub-pill active" onClick={() => setOpen((o) => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', fontSize: 11.5 }}>
+        {value ? dot(dotColor(value)) : null}
+        <span style={{ fontFamily: value ? 'monospace' : undefined, fontWeight: 600 }}>{label}</span>
+        <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 2 }}>▾</span>
+      </button>
+      {open && (<>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setOpen(false)} />
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 99, minWidth: 230,
+          background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 12,
+          padding: 6, boxShadow: 'var(--shadow-pop)',
+        }}>
+          <div
+            onClick={() => { onChange(null); setOpen(false); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 8,
+              fontSize: 12, fontWeight: 600, cursor: 'pointer',
+              color: !value ? '#c7d2fe' : 'var(--text)',
+              background: !value ? 'var(--blue-soft)' : 'transparent',
+            }}
+            onMouseEnter={(e) => { if (value) e.currentTarget.style.background = 'var(--surface)'; }}
+            onMouseLeave={(e) => { if (value) e.currentTarget.style.background = 'transparent'; }}>
+            All Hubs
+          </div>
+          {hubs.map((h) => {
+            const active = value === h;
+            return (
+              <div key={h}
+                onClick={() => { onChange(h); setOpen(false); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 8,
+                  fontSize: 12, fontFamily: 'monospace', fontWeight: 600, cursor: 'pointer',
+                  color: active ? '#c7d2fe' : 'var(--text)',
+                  background: active ? 'var(--blue-soft)' : 'transparent',
+                }}
+                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--surface)'; }}
+                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
+                {dot(dotColor(h))}
+                {h.toUpperCase()}
+              </div>
+            );
+          })}
+        </div>
+      </>)}
     </div>
   );
 }
