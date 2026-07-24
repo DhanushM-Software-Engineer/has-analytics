@@ -94,6 +94,17 @@ export function buildEventPool(hub: string, d: HubDetail): PoolEvent[] {
     }),
   );
 
+  // SNAP events from speed segment
+  (d.speed?.hub_snap_hub?.events || []).forEach((e: any) => {
+    events.push({
+      hub, ts: e.ts, uc: e.uc || 'Hub Event',
+      dev: e.dev || '—', room: e.room || '—', src: 'direct_hub', lat: e.gap,
+      reason: null, net: 'hub', dock: '—', status: e.gap > 800 ? 'slow' : 'ok',
+      segType: 'hub_snap_hub' as any, hasTiming: true,
+      matter_ts: e.matter_ts, snap_ts: e.snap_ts,
+    });
+  });
+
   events.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
   poolCache.set(d, events);
   return events;

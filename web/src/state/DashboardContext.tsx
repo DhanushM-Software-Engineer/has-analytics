@@ -36,7 +36,7 @@ export type View =
 
 export interface LcOrigin { view: 'landing' | 'detail'; hub?: string; tabId?: HubTabId }
 
-interface ModalState { title: string; body: ReactNode }
+interface ModalState { title: ReactNode; body: ReactNode }
 
 interface Ctx {
   // data
@@ -59,7 +59,7 @@ interface Ctx {
   lcGoBack(): void;
   // modal
   modal: ModalState | null;
-  showModal(title: string, body: ReactNode): void;
+  showModal(title: ReactNode, body: ReactNode): void;
   closeModal(): void;
 }
 
@@ -74,11 +74,11 @@ export function useDash(): Ctx {
 async function fetchAll(from: string, to: string): Promise<{ hubs: string[]; D: Record<string, HubDetail> }> {
   const { hubs } = await fetchHubs();
   const D: Record<string, HubDetail> = {};
-  await Promise.all(
-    hubs.map(async (h) => {
-      D[h] = await fetchHubDetail(h, from, to);
-    }),
-  );
+  // Fetch sequentially to avoid hitting BigQuery concurrency limits (50 concurrent queries limit)
+  // Each hub detail fires ~13 parallel queries in the backend. 13 * 4 = 52 > 50
+  for (const h of hubs) {
+    D[h] = await fetchHubDetail(h, from, to);
+  }
   return { hubs, D };
 }
 
@@ -128,7 +128,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const showModal = useCallback((title: string, body: ReactNode) => setModal({ title, body }), []);
+  const showModal = useCallback((title: ReactNode, body: ReactNode) => setModal({ title, body }), []);
   const closeModal = useCallback(() => setModal(null), []);
 
   const value = useMemo<Ctx>(() => ({

@@ -96,7 +96,7 @@ export function useHubModals(hub: string) {
     const nsC = nsAvg >= 95 ? 'var(--green)' : nsAvg >= 80 ? 'var(--yellow)' : 'var(--red)';
     const recent = [...allSourceDaily(hub, d)].reverse().slice(0, 14);
     showModal('', (<>
-      <DebugHeader metric="NORTH STAR" formula="(Commands Completed < 1.0s / Total Commands) × 100" />
+      <DebugHeader metric="NORTH STAR" formula="ROUND(100 × COUNT(latency_ms < 1000) / NULLIF(COUNT(latency_ms IS NOT NULL), 0), 2)" />
       <StatCells cells={[{ label: 'NORTH STAR', val: `${nsAvg}%`, color: nsC }]} />
       <BreakdownBox title="DAILY TREND">
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>

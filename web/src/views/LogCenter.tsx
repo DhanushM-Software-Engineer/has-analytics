@@ -2,12 +2,74 @@
  *  version (tabs, hub pills, filters, context banner, segment-aware columns,
  *  expandable timing pipeline) but with VIRTUALIZED rows so tens of thousands
  *  of events render smoothly (the at-scale requirement). */
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useDash, type LcOpts } from '../state/DashboardContext';
-import { buildEventPool, eventSrcClass, srcPred, evDow, evHour, type PoolEvent } from '../lib/pool';
-import { relColor, msDiff, segStatus, devShort } from '../lib/format';
-import { InfoButton } from '../components/common';
+import { buildEventPool, srcPred, evDow, evHour, type PoolEvent } from '../lib/pool';
+import { msDiff, segStatus, devShort } from '../lib/format';
+import { SearchableSelect } from '../components/common';
+
+const FilterIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#c7d2fe' }}>
+    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+  </svg>
+);
+
+function HeaderFilter({ label, value, onChange, options }: { label: string; value: string | null; onChange: (v: string) => void; options: {label: string; value: string}[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }} onClick={() => setOpen(!open)}>
+      <span>{label}</span>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: value ? '#fff' : 'var(--muted)' }}>
+        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+      </svg>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, zIndex: 100,
+          background: 'var(--surface2)', border: '1px solid var(--border2)',
+          borderRadius: 8, padding: 6, minWidth: 120, boxShadow: 'var(--shadow-pop)',
+          display: 'flex', flexDirection: 'column', gap: 2, cursor: 'default'
+        }} onClick={e => e.stopPropagation()}>
+          <div onClick={() => { onChange(''); setOpen(false); }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 4,
+              cursor: 'pointer', fontSize: 11, fontWeight: !value ? 600 : 400,
+              color: !value ? '#fff' : 'var(--muted)', background: !value ? 'var(--blue-soft)' : 'transparent', textTransform: 'none'
+            }}
+          >
+            <div style={{ width: 14, height: 14, borderRadius: '50%', border: !value ? '2px solid #fff' : '2px solid var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {!value && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366f1' }} />}
+            </div>
+            Default
+          </div>
+          {options.map(opt => (
+            <div key={opt.value} onClick={() => { onChange(opt.value); setOpen(false); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 4,
+                cursor: 'pointer', fontSize: 11, fontWeight: value === opt.value ? 600 : 400,
+                color: value === opt.value ? '#fff' : 'var(--muted)', background: value === opt.value ? 'var(--blue-soft)' : 'transparent', textTransform: 'none'
+              }}
+            >
+              <div style={{ width: 14, height: 14, borderRadius: '50%', border: value === opt.value ? '2px solid #fff' : '2px solid var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {value === opt.value && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366f1' }} />}
+              </div>
+              {opt.label}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type LcTab = 'failures' | 'slow' | 'all';
 
@@ -25,6 +87,10 @@ interface LcState {
   hourFilter: number | null;
   dayFilter: string | null;
   context: { label: string; desc?: string } | null;
+  dateSort: 'latest' | 'oldest' | null;
+  timeSort: 'recent' | 'past' | null;
+  latSort: 'fast' | 'slow' | null;
+  reasonFilterMode: 'most' | 'least' | null;
 }
 
 function initState(opts: LcOpts): LcState {
@@ -42,6 +108,10 @@ function initState(opts: LcOpts): LcState {
     hourFilter: opts.hourFilter ?? null,
     dayFilter: opts.dayFilter ?? null,
     context: opts.context ?? null,
+    dateSort: null,
+    timeSort: null,
+    latSort: null,
+    reasonFilterMode: null,
   };
 }
 
@@ -55,46 +125,65 @@ export function LogCenter({ opts }: { opts: LcOpts }) {
     const hubs = st.hub ? [st.hub] : Object.keys(D);
     let all: PoolEvent[] = [];
     hubs.forEach((h) => { const d = D[h]; if (d) all = all.concat(buildEventPool(h, d)); });
-    all.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
 
     if (st.tab === 'failures') all = all.filter((e) => e.status === 'fail');
     else if (st.tab === 'slow') all = all.filter((e) => e.status === 'slow' || e.status === 'warn');
 
     const pred = st.srcFilter ? srcPred(st.srcFilter) : null;
     const src = st.src.toLowerCase(), reason = st.reason.toLowerCase(), search = st.search.toLowerCase();
-    return all.filter((e) => {
-      if (pred && !pred(e)) return false;
-      if (st.ucFilter && !(e.uc || '').toLowerCase().includes(st.ucFilter.toLowerCase())) return false;
-      if (st.segFilter) {
-        if (st.segFilter === 'hub_app') { if (e.segType !== 'hub_snap') return false; }
-        else if (e.segType !== st.segFilter) return false;
+    let filtered = all.filter((e) => {
+        if (pred && !pred(e)) return false;
+        if (st.ucFilter && !(e.uc || '').toLowerCase().includes(st.ucFilter.toLowerCase())) return false;
+        if (st.segFilter) {
+          if (st.segFilter === 'hub_app') { if (e.hub_app_lat == null) return false; }
+          else if (st.segFilter === 'hub_snap') { if (e.segType !== 'hub_snap_hub' as any) return false; }
+          else if (e.segType !== st.segFilter) return false;
+        }
+        if (st.latMin !== null || st.latMax !== null) {
+          const l = parseFloat(String(e.lat));
+          if (isNaN(l)) return false;
+          if (st.latMin !== null && l < st.latMin) return false;
+          if (st.latMax !== null && l > st.latMax) return false;
+        }
+        if (st.hourFilter !== null && evHour(e.ts) !== st.hourFilter) return false;
+        if (st.dayFilter && evDow(e.ts) !== st.dayFilter) return false;
+        if (src) {
+          const esrc = (e.src || '').toLowerCase();
+          if (src === 'app' && esrc !== 'app') return false;
+          else if (src !== 'app' && !esrc.includes(src)) return false;
+        }
+        if (reason && !(e.reason || '').toLowerCase().includes(reason)) return false;
+        if (search && !`${e.ts} ${e.dev} ${e.room} ${e.uc} ${e.hub} ${e.dock || ''}`.toLowerCase().includes(search)) return false;
+        return true;
+      });
+
+      if (st.reasonFilterMode) {
+        const freqs: Record<string, number> = {};
+        for (const e of filtered) {
+          if (e.reason) freqs[e.reason] = (freqs[e.reason] || 0) + 1;
+        }
+        const sortedReasons = Object.entries(freqs).sort((a, b) => b[1] - a[1]);
+        if (sortedReasons.length > 0) {
+          const targetReason = st.reasonFilterMode === 'most' ? sortedReasons[0]![0] : sortedReasons[sortedReasons.length - 1]![0];
+          filtered = filtered.filter(e => e.reason === targetReason);
+        }
       }
-      if (st.latMin !== null || st.latMax !== null) {
-        const l = parseFloat(String(e.lat));
-        if (isNaN(l)) return false;
-        if (st.latMin !== null && l < st.latMin) return false;
-        if (st.latMax !== null && l > st.latMax) return false;
-      }
-      if (st.hourFilter !== null && evHour(e.ts) !== st.hourFilter) return false;
-      if (st.dayFilter && evDow(e.ts) !== st.dayFilter) return false;
-      if (src) {
-        const esrc = (e.src || '').toLowerCase();
-        if (src === 'app' && esrc !== 'app') return false;
-        else if (src !== 'app' && !esrc.includes(src)) return false;
-      }
-      if (reason && !(e.reason || '').toLowerCase().includes(reason)) return false;
-      if (search && !`${e.ts} ${e.dev} ${e.room} ${e.uc} ${e.hub}`.toLowerCase().includes(search)) return false;
-      return true;
-    });
+
+      filtered.sort((a, b) => {
+        if (st.latSort) {
+          const la = parseFloat(String(a.lat)) || Infinity;
+          const lb = parseFloat(String(b.lat)) || Infinity;
+          if (la !== lb) return st.latSort === 'fast' ? la - lb : lb - la;
+        }
+        const dir = (st.dateSort === 'oldest' || st.timeSort === 'past') ? 1 : -1;
+        return (a.ts || '').localeCompare(b.ts || '') * dir;
+      });
+
+      return filtered;
   }, [D, st]);
 
-  const failCnt = events.filter((e) => e.status === 'fail').length;
-  const slowCnt = events.filter((e) => e.status === 'slow' || e.status === 'warn').length;
-  const byClass = { app: 0, remote: 0, dock: 0, hub: 0 };
-  events.forEach((e) => { byClass[eventSrcClass(e)]++; });
-
   const clearFilters = () => {
-    setSt((s) => ({ ...s, src: '', reason: '', search: '', context: null, srcFilter: null, ucFilter: null, segFilter: null, latMin: null, latMax: null, hourFilter: null, dayFilter: null }));
+    setSt((s) => ({ ...s, hub: null, src: '', reason: '', search: '', context: null, srcFilter: null, ucFilter: null, segFilter: null, latMin: null, latMax: null, hourFilter: null, dayFilter: null, dateSort: null, timeSort: null, latSort: null, reasonFilterMode: null }));
     setExpanded(null);
   };
 
@@ -118,103 +207,116 @@ export function LogCenter({ opts }: { opts: LcOpts }) {
   const segCols = st.segFilter ? SEG_COLS[st.segFilter === 'remote_e2e' ? 'local_e2e' : st.segFilter] : null;
   const gridTemplate = segCols ? segCols.grid : DEFAULT_GRID;
 
-  const tabNames: Record<string, string> = { overall: 'Overview', speed: 'Speed', reliability: 'Reliability', usage: 'Usage' };
-  const origin = dash.view.kind === 'logcenter' ? dash.view.origin : null;
+  const allEvents = useMemo(() => {
+    const hList = Object.keys(D);
+    let all: PoolEvent[] = [];
+    hList.forEach((h) => { const d = D[h]; if (d) all = all.concat(buildEventPool(h, d)); });
+    all.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
+    return all;
+  }, [D]);
+
+  const devRoomOptions = useMemo(() => {
+    const set = new Set<string>();
+    allEvents.forEach(e => {
+       if (e.dev && e.dev !== '—') set.add(e.dev);
+       if (e.room && e.room !== '—') set.add(e.room);
+    });
+    return Array.from(set).map(x => ({ label: x, value: x })).sort((a,b) => a.label.localeCompare(b.label));
+  }, [allEvents]);
+
+  const hubOptions = Object.keys(D).map(h => ({ label: h.toUpperCase(), value: h }));
+  
+  const srcOptions = [
+    { label: 'App Control (Local)', value: 'app' },
+    { label: 'Remote App', value: 'remote' },
+    { label: 'Dock Control', value: 'docklet' },
+    { label: 'Hub (Direct / Scene / Automation)', value: 'direct' }
+  ];
+
+  const reasonOptions = [
+    { label: 'TIMEOUT', value: 'TIMEOUT' },
+    { label: 'NO_RESPONSE', value: 'NO_RESPONSE' },
+    { label: 'DEVICE_OFFLINE', value: 'DEVICE_OFFLINE' },
+    { label: 'DEVICE_UNAVAILABLE', value: 'DEVICE_UNAVAILABLE' },
+    { label: 'THREAD_MESH_FAIL', value: 'THREAD_MESH_FAIL' },
+  ];
+
+  const origin = dash.view.kind === 'logcenter' ? dash.view.origin : null as any;
 
   return (
-    <div>
-      <div className="lc-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-            {origin && (
-              <div style={{ paddingTop: 2 }}>
-                <button className="btn" onClick={dash.lcGoBack} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '5px 12px' }}>
-                  <span style={{ fontSize: 14, lineHeight: 1 }}>←</span>
-                  <span>
-                    <div style={{ fontWeight: 600, color: '#fafafa' }}>
-                      {origin.view === 'detail' ? `${origin.hub?.toUpperCase()} · ${tabNames[origin.tabId ?? 'overall'] ?? 'Overview'}` : 'Fleet Overview'}
-                    </div>
-                    <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 1 }}>Return to previous view</div>
-                  </span>
-                </button>
-              </div>
-            )}
-            <div>
-              <div className="lc-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                Log Center<InfoButton k="log_center" plain />
-              </div>
-              <div className="lc-subtitle">
-                Event-level debugging workspace · Click any row to expand timing pipeline · {dash.periodLabel()}
-              </div>
+    <div style={{ padding: '20px 28px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+          {origin && (
+            <div style={{ paddingTop: 2 }}>
+              <button className="btn" onClick={dash.lcGoBack} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, padding: '5px 12px' }}>
+                <span style={{ fontSize: 14, lineHeight: 1 }}>←</span>
+              </button>
             </div>
+          )}
+          <div>
+            <h2 style={{ fontSize: 17, color: '#fafafa', fontWeight: 700, letterSpacing: '-.3px', textTransform: 'uppercase', margin: '0 0 6px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+              LOG CENTER
+            </h2>
           </div>
-          <HubDropdown
-            hubs={Object.keys(D)}
-            dotColor={(h) => relColor(D[h]!.activity_reliability ?? D[h]!.reliability)}
-            value={st.hub}
-            onChange={(h) => { setSt((s) => ({ ...s, hub: h })); setExpanded(null); }}
-          />
         </div>
-        <div className="lc-tabs-row">
-          <div className="lc-tabs">
-            <button className={`lc-tab tab-fail ${st.tab === 'failures' ? 'active' : ''}`} onClick={() => { setSt((s) => ({ ...s, tab: 'failures' })); setExpanded(null); }}>Failures</button>
-            <button className={`lc-tab tab-slow ${st.tab === 'slow' ? 'active' : ''}`} onClick={() => { setSt((s) => ({ ...s, tab: 'slow' })); setExpanded(null); }}>Slow Events (&gt;800ms)</button>
-            <button className={`lc-tab tab-all ${st.tab === 'all' ? 'active' : ''}`} onClick={() => { setSt((s) => ({ ...s, tab: 'all' })); setExpanded(null); }}>All Events</button>
-          </div>
-          <div className="lc-filters">
-            <select className="lc-filter-select" value={st.src} onChange={(e) => setSt((s) => ({ ...s, src: e.target.value }))}>
-              <option value="">All Sources</option>
-              <option value="app">App Control (Local)</option>
-              <option value="remote">Remote App</option>
-              <option value="docklet">Dock Control</option>
-              <option value="direct">Hub (Direct / Scene / Automation)</option>
-            </select>
-            <select className="lc-filter-select" value={st.reason} onChange={(e) => setSt((s) => ({ ...s, reason: e.target.value }))}>
-              <option value="">All Reasons</option>
-              <option value="TIMEOUT">TIMEOUT</option>
-              <option value="NO_RESPONSE">NO_RESPONSE</option>
-              <option value="DEVICE_OFFLINE">DEVICE_OFFLINE</option>
-              <option value="DEVICE_UNAVAILABLE">DEVICE_UNAVAILABLE</option>
-              <option value="THREAD_MESH_FAIL">THREAD_MESH_FAIL</option>
-            </select>
-            <input className="lc-filter-input" placeholder="Device, room, use case…" value={st.search}
-              onChange={(e) => setSt((s) => ({ ...s, search: e.target.value }))} />
-            <button className="lc-filter-clear" onClick={clearFilters}>Clear</button>
-          </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button 
+            onClick={() => { setSt(s => ({ ...s, tab: 'all' })); setExpanded(null); }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: `1px solid var(--border)`, borderRadius: 20, padding: '6px 14px', fontSize: 11, fontWeight: 500, cursor: 'pointer', opacity: st.tab === 'all' ? 1 : 0.5 }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface2)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--muted)', display: 'inline-block' }} />
+            <span style={{ color: 'var(--text)' }}>ALL EVENTS</span>
+          </button>
+          <button 
+            onClick={() => { setSt(s => ({ ...s, tab: 'slow' })); setExpanded(null); }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: `1px solid var(--yellow)`, borderRadius: 20, padding: '6px 14px', fontSize: 11, fontWeight: 500, cursor: 'pointer', opacity: st.tab === 'slow' ? 1 : 0.5 }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(234, 179, 8, 0.25)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--yellow)', display: 'inline-block' }} />
+            <span style={{ color: 'var(--yellow)' }}>SLOW EVENTS</span>
+          </button>
+          <button 
+            onClick={() => { setSt(s => ({ ...s, tab: 'failures' })); setExpanded(null); }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: `1px solid var(--red)`, borderRadius: 20, padding: '6px 14px', fontSize: 11, fontWeight: 500, cursor: 'pointer', opacity: st.tab === 'failures' ? 1 : 0.5 }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.25)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)', display: 'inline-block' }} />
+            <span style={{ color: 'var(--red)' }}>FAILED EVENTS</span>
+          </button>
         </div>
       </div>
 
-      <div style={{ padding: '20px 28px' }}>
-        {hasFilter && (
-          <div className="lc-context-banner">
-            <div>
-              <div className="lc-context-label">{st.context?.label || 'Filtered View'}</div>
-              <div className="lc-context-desc">
-                {(st.context?.desc || '') + (filterParts.length ? ` · Filter — ${filterParts.join(' · ')}` : '')}
-              </div>
+      {hasFilter && (
+        <div className="lc-context-banner" style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <FilterIcon />
+            <div className="lc-context-label">FILTER</div>
+            <div className="lc-context-desc" style={{ marginLeft: 10, marginTop: 0 }}>
+              {st.context?.label || (filterParts.length ? `Filter: ${filterParts.join(' · ')}` : '')}
             </div>
-            <button className="lc-context-clear" onClick={clearFilters}>Clear Filter</button>
           </div>
-        )}
+        </div>
+      )}
 
-        <div className="lc-summary-row">
-          <span>
-            <span className="lc-cnt">{events.length}</span> events shown{' '}
-            <span style={{ color: 'var(--muted)' }}>
-              ({[
-                byClass.app ? `App ${byClass.app}` : null,
-                byClass.remote ? `Remote ${byClass.remote}` : null,
-                byClass.dock ? `Dock ${byClass.dock}` : null,
-                byClass.hub ? `Hub ${byClass.hub}` : null,
-              ].filter(Boolean).join(' · ')})
-            </span>
-            {failCnt > 0 && <> · <span className="lc-cnt-r">{failCnt} failure{failCnt !== 1 ? 's' : ''}</span></>}
-            {slowCnt > 0 && st.tab !== 'slow' && <> · <span className="lc-cnt-y">{slowCnt} slow</span></>}
-            {' '}· {st.hub ? st.hub.toUpperCase() : 'All Hubs'} · {dash.periodLabel()}
-          </span>
+      <div style={{ background: 'rgba(0,0,0,0.4)', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>LOGS</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <SearchableSelect label="HUBS" value={st.hub || ''} onChange={v => { setSt(s => ({ ...s, hub: v || null })); setExpanded(null); }} options={hubOptions} />
+            <SearchableSelect label="SOURCE" value={st.src || ''} onChange={v => { setSt(s => ({ ...s, src: v })); setExpanded(null); }} options={srcOptions} />
+            <SearchableSelect label="FAILED REASON" value={st.reason || ''} onChange={v => { setSt(s => ({ ...s, reason: v })); setExpanded(null); }} options={reasonOptions} />
+            <SearchableSelect label="DEVICE, ROOM, FLOOR" value={st.search || ''} onChange={v => { setSt(s => ({ ...s, search: v })); setExpanded(null); }} options={devRoomOptions} />
+            <button className="card-btn-view-red" onClick={clearFilters}>CLEAR</button>
+          </div>
         </div>
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
+        <div>
           {events.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '56px 20px', color: 'var(--muted)', fontSize: 12 }}>
               No events match the current filters.
@@ -222,7 +324,13 @@ export function LogCenter({ opts }: { opts: LcOpts }) {
           ) : (
             <div ref={parentRef} style={{ overflowY: 'auto', overflowX: 'auto', maxHeight: 620 }}>
               <div className="lcv-head" style={{ gridTemplateColumns: gridTemplate, minWidth: 900 }}>
-                {(segCols ? segCols.heads : DEFAULT_HEADS).map((h, i) => <div key={i}>{h}</div>)}
+                {(segCols ? segCols.heads : DEFAULT_HEADS).map((h, i) => {
+                  if (h === 'DATE') return <div key={i}><HeaderFilter label="DATE" value={st.dateSort || ''} onChange={v => setSt(s => ({ ...s, dateSort: (v || null) as any }))} options={[{label: 'LATEST', value: 'latest'}, {label: 'OLDEST', value: 'oldest'}]} /></div>;
+                  if (h === 'TIME') return <div key={i}><HeaderFilter label="TIME" value={st.timeSort || ''} onChange={v => setSt(s => ({ ...s, timeSort: (v || null) as any }))} options={[{label: 'RECENT', value: 'recent'}, {label: 'PAST', value: 'past'}]} /></div>;
+                  if (h === 'LATENCY') return <div key={i}><HeaderFilter label="LATENCY" value={st.latSort || ''} onChange={v => setSt(s => ({ ...s, latSort: (v || null) as any }))} options={[{label: 'FAST', value: 'fast'}, {label: 'SLOW', value: 'slow'}]} /></div>;
+                  if (h === 'FAILED REASON') return <div key={i}><HeaderFilter label="FAILED REASON" value={st.reasonFilterMode || ''} onChange={v => setSt(s => ({ ...s, reasonFilterMode: (v || null) as any }))} options={[{label: 'MOST', value: 'most'}, {label: 'LEAST', value: 'least'}]} /></div>;
+                  return <div key={i}>{h}</div>;
+                })}
               </div>
               <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative', minWidth: 900 }}>
                 {rowVirtualizer.getVirtualItems().map((vi) => {
@@ -246,73 +354,10 @@ export function LogCenter({ opts }: { opts: LcOpts }) {
   );
 }
 
-/** Hub picker dropdown — colour-coded status dot per hub (same colours as the
- *  old pills: green/yellow/red by reliability). "All Hubs" = no filter. */
-function HubDropdown({ hubs, dotColor, value, onChange }: {
-  hubs: string[];
-  dotColor: (hub: string) => string;
-  value: string | null;
-  onChange: (hub: string | null) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const dot = (c: string) => (
-    <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: c, flexShrink: 0, boxShadow: `0 0 6px ${c}` }} />
-  );
-  const label = value ? value.toUpperCase() : 'All Hubs';
-  return (
-    <div style={{ position: 'relative' }}>
-      <button className="lc-hub-pill active" onClick={() => setOpen((o) => !o)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', fontSize: 11.5 }}>
-        {value ? dot(dotColor(value)) : null}
-        <span style={{ fontFamily: value ? 'monospace' : undefined, fontWeight: 600 }}>{label}</span>
-        <span style={{ fontSize: 9, color: 'var(--muted)', marginLeft: 2 }}>▾</span>
-      </button>
-      {open && (<>
-        <div style={{ position: 'fixed', inset: 0, zIndex: 98 }} onClick={() => setOpen(false)} />
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 99, minWidth: 230,
-          background: 'var(--surface2)', border: '1px solid var(--border2)', borderRadius: 12,
-          padding: 6, boxShadow: 'var(--shadow-pop)',
-        }}>
-          <div
-            onClick={() => { onChange(null); setOpen(false); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 8,
-              fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              color: !value ? '#c7d2fe' : 'var(--text)',
-              background: !value ? 'var(--blue-soft)' : 'transparent',
-            }}
-            onMouseEnter={(e) => { if (value) e.currentTarget.style.background = 'var(--surface)'; }}
-            onMouseLeave={(e) => { if (value) e.currentTarget.style.background = 'transparent'; }}>
-            All Hubs
-          </div>
-          {hubs.map((h) => {
-            const active = value === h;
-            return (
-              <div key={h}
-                onClick={() => { onChange(h); setOpen(false); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 8,
-                  fontSize: 12, fontFamily: 'monospace', fontWeight: 600, cursor: 'pointer',
-                  color: active ? '#c7d2fe' : 'var(--text)',
-                  background: active ? 'var(--blue-soft)' : 'transparent',
-                }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--surface)'; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
-                {dot(dotColor(h))}
-                {h.toUpperCase()}
-              </div>
-            );
-          })}
-        </div>
-      </>)}
-    </div>
-  );
-}
 
 // ── Row layouts ───────────────────────────────────────────────────────────────
-const DEFAULT_GRID = '22px 1.5fr 1fr 1.2fr 0.9fr 1.2fr 0.8fr 0.7fr 1.1fr 0.7fr';
-const DEFAULT_HEADS = ['', 'Timestamp', 'Hub', 'Use Case', 'Source', 'Device', 'Room', 'Latency', 'Status / Reason', 'Network'];
+const DEFAULT_GRID = '22px 0.7fr 0.7fr 1fr 1fr 1.2fr 0.8fr 0.6fr 0.8fr 0.8fr 1.1fr 0.7fr';
+const DEFAULT_HEADS = ['', 'DATE', 'TIME', 'HUB', 'USE CASE', 'DEVICE', 'ROOM', 'FLOOR', 'LATENCY', 'STATE', 'FAILED REASON', 'NETWORK'];
 
 const SEG_COLS: Record<string, { grid: string; heads: string[] }> = {
   hub_snap: {
@@ -342,7 +387,7 @@ function LcRow({ ev, isExp, grid, segKey, onClick }: {
       {(ev.hub || '—').toUpperCase()}
     </span>
   );
-  const chev = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 11, userSelect: 'none' }}>{isExp ? '▾' : '▸'}</div>;
+  const chev = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 11, userSelect: 'none' }}>{isExp ? '▼' : '▶'}</div>;
 
   let cells: React.ReactNode;
   if (segKey === 'hub_snap' || segKey === 'hub_app') {
@@ -377,21 +422,33 @@ function LcRow({ ev, isExp, grid, segKey, onClick }: {
       <div style={{ fontWeight: 700, color: latColor, fontSize: 13 }}>{latDisp}</div>
     </>);
   } else {
+    let dateStr = '—', timeStr = '—';
+    if (ev.ts) {
+      const d = new Date(ev.ts);
+      if (!isNaN(d.getTime())) {
+        dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }).replace(/\//g, '-');
+        timeStr = d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
+    }
+
     const statusCell = ev.status === 'fail'
-      ? <span className="tag tag-red">{ev.reason || 'FAILED'}</span>
+      ? <span className="tag tag-red">FAILED</span>
       : ev.status === 'slow' || ev.status === 'warn'
         ? <span className="tag tag-yellow">SLOW</span>
         : <span className="tag tag-green">OK</span>;
+
     cells = (<>
       {chev}
-      <div style={mono}>{ev.ts || '—'}</div>
+      <div style={mono}>{dateStr}</div>
+      <div style={mono}>{timeStr}</div>
       <div>{hubPill}</div>
       <div style={{ fontSize: 11 }}>{ev.uc || '—'}</div>
-      <div style={{ fontSize: 10, color: 'var(--muted)' }}>{ev.src || '—'}</div>
       <div style={{ fontFamily: 'monospace', fontSize: 10 }}>{dev}</div>
       <div style={{ fontSize: 11 }}>{ev.room || '—'}</div>
+      <div style={{ fontSize: 11 }}>—</div>
       <div style={{ fontWeight: 700, color: latColor, fontSize: 13 }}>{latDisp}</div>
       <div>{statusCell}</div>
+      <div style={{ fontSize: 10, color: 'var(--text)' }}>{ev.reason || '—'}</div>
       <div style={{ fontSize: 10, color: 'var(--muted)' }}>{ev.net || '—'}</div>
     </>);
   }

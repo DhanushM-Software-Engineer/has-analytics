@@ -81,13 +81,15 @@ export function OverallTab({ hub, d }: { hub: string; d: HubDetail }) {
                 tooltip: {
                   usePointStyle: true, boxWidth: 28, boxHeight: 10,
                   itemSort: (a, b) => a.datasetIndex - b.datasetIndex,
-                  filter: (item) => item.datasetIndex < 4,
                   callbacks: {
                     labelPointStyle: (ctx) =>
                       ctx.datasetIndex === 3 ? { pointStyle: pts.rel, rotation: 0 }
                       : ctx.datasetIndex === 4 ? { pointStyle: pts.tgt, rotation: 0 }
                       : { pointStyle: 'rect', rotation: 0 },
-                    label: (ctx) => `${ctx.dataset.label}: ${(ctx.dataset as { yAxisID?: string }).yAxisID === 'y1' ? (ctx.parsed.y ?? 0).toFixed(2) + '%' : (ctx.parsed.y ?? 0) + ' events'}`,
+                    label: (ctx) => {
+                      if (ctx.datasetIndex === 4) return 'Target %: >= 97%';
+                      return `${ctx.dataset.label}: ${(ctx.dataset as { yAxisID?: string }).yAxisID === 'y1' ? (ctx.parsed.y ?? 0).toFixed(2) + '%' : (ctx.parsed.y ?? 0) + ' events'}`;
+                    },
                   },
                 },
               },
@@ -221,10 +223,25 @@ export function OverallTab({ hub, d }: { hub: string; d: HubDetail }) {
               responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
               onClick: (_e, els) => { if (els.length) showDayDebug(daily[els[0]!.index], 'reliability'); },
               plugins: {
-                legend: { labels: { usePointStyle: true, boxWidth: 12, padding: 20, sort: (a, b) => (a.datasetIndex ?? 0) - (b.datasetIndex ?? 0) } },
+                legend: { 
+                  labels: { 
+                    usePointStyle: true, 
+                    boxWidth: 12, 
+                    padding: 20, 
+                    sort: (a, b) => (a.datasetIndex ?? 0) - (b.datasetIndex ?? 0),
+                    generateLabels: (chart) => {
+                      const labels = ChartJS.defaults.plugins.legend.labels.generateLabels(chart);
+                      labels.forEach((l) => { l.pointStyle = 'rect'; });
+                      return labels;
+                    }
+                  } 
+                },
                 tooltip: {
                   usePointStyle: true, boxWidth: 12, itemSort: (a, b) => a.datasetIndex - b.datasetIndex,
-                  callbacks: { label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}` },
+                  callbacks: { 
+                    labelPointStyle: () => ({ pointStyle: 'rect', rotation: 0 }),
+                    label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}` 
+                  },
                 },
               },
               scales: {

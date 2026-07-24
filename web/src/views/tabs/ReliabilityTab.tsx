@@ -5,16 +5,37 @@ import { useMemo, useState } from 'react';
 import { Line, Doughnut } from 'react-chartjs-2';
 import '../../charts/setup';
 import type { HubDetail, DockStats } from '../../types/api';
-import { allSourceDaily, failuresFor, srcPred } from '../../lib/pool';
+import { allSourceDaily, failuresFor, srcPred, buildEventPool } from '../../lib/pool';
 import { relColor, relTag, devShort } from '../../lib/format';
 import { ucLabel } from '../../lib/constants';
-import { InfoButton, KV, EventTable, LcCta } from '../../components/common';
+import { InfoButton, EventTable } from '../../components/common';
 import { useDash } from '../../state/DashboardContext';
 
-const FAIL_COLS = [
-  { key: 'ts', label: 'Time' }, { key: 'uc', label: 'Use Case' }, { key: 'dev', label: 'Device' },
-  { key: 'room', label: 'Room' }, { key: 'reason', label: 'Reason' }, { key: 'lat', label: 'Latency' },
-];
+const relIconCanvas = document.createElement('canvas');
+relIconCanvas.width = 24;
+relIconCanvas.height = 10;
+const relIconCtx = relIconCanvas.getContext('2d');
+if (relIconCtx) {
+  relIconCtx.fillStyle = '#10b981';
+  relIconCtx.fillRect(0, 4, 24, 2);
+  relIconCtx.beginPath();
+  relIconCtx.arc(12, 5, 3, 0, 2 * Math.PI);
+  relIconCtx.fill();
+}
+
+const targetIconCanvas = document.createElement('canvas');
+targetIconCanvas.width = 24;
+targetIconCanvas.height = 10;
+const targetIconCtx = targetIconCanvas.getContext('2d');
+if (targetIconCtx) {
+  targetIconCtx.strokeStyle = 'rgba(228,228,231,0.5)';
+  targetIconCtx.setLineDash([3, 2]);
+  targetIconCtx.lineWidth = 2;
+  targetIconCtx.beginPath();
+  targetIconCtx.moveTo(0, 5);
+  targetIconCtx.lineTo(24, 5);
+  targetIconCtx.stroke();
+}
 
 export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
   const dash = useDash();
@@ -37,135 +58,395 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
 
   const showSrcRelModal = (src: string, total: number, success: number, fail: number, rel: number) => {
     const lbl = ucLabel(src);
-    const fails = failuresFor(hub, d, srcPred(src));
-    const lcOpts = { hub, tab: 'failures' as const, srcFilter: src, context: { label: `Failures — ${lbl}`, desc: `${fail} failed events from ${lbl} on ${hub.toUpperCase()}` } };
-    dash.showModal(`${lbl} — Reliability Debug`, (<>
-      <table style={{ fontSize: 12, marginBottom: 4 }}>
-        <tbody>
-          <KV label="Source"><strong>{lbl}</strong></KV>
-          <KV label="Total Events"><strong style={{ fontSize: 16 }}>{total}</strong></KV>
-          <KV label="Successful"><strong style={{ color: 'var(--green)' }}>{success}</strong></KV>
-          <KV label="Failed"><strong style={{ color: 'var(--red)', fontSize: 16 }}>{fail}</strong></KV>
-          <KV label="Reliability"><strong style={{ color: relColor(rel), fontSize: 16 }}>{rel}%</strong></KV>
-        </tbody>
-      </table>
-      {fail > 0 ? (
-        <div className="dbg-section">
-          <div className="dbg-section-hdr">
-            <span className="dbg-section-title">Failure Events for {lbl} ({fails.length})</span>
-            <button className="dbg-lc-link" onClick={() => dash.openLogCenter(lcOpts)}>View all in Log Center →</button>
+    const allEvents = buildEventPool(hub, d).filter(srcPred(src));
+    const sorted = [...allEvents].sort((a, b) => {
+      const aFail = a.status === 'fail' ? 0 : 1;
+      const bFail = b.status === 'fail' ? 0 : 1;
+      if (aFail !== bFail) return aFail - bFail;
+      return (b.ts || '').localeCompare(a.ts || '');
+    });
+    const lcOpts = { hub, tab: 'all' as const, srcFilter: src, context: { label: `RELIABILITY BY SOURCE: ${lbl}, EVENTS: ${sorted.length}, FAILURES: ${sorted.filter((e: any) => e.status==='fail').length}` } };
+    
+    const rows = sorted.slice(0, 20).map((e: any) => {
+      let fmtDate = '—', fmtTime = '—';
+      if (e.ts) {
+        const t = new Date(e.ts);
+        if (!isNaN(t.getTime())) {
+          const y = t.getFullYear().toString().substring(2);
+          const m = (t.getMonth() + 1).toString().padStart(2, '0');
+          const d_ = t.getDate().toString().padStart(2, '0');
+          fmtDate = `${d_}-${m}-${y}`;
+          fmtTime = t.toTimeString().split(' ')[0] || '—';
+        }
+      }
+      
+      let s = e.status?.toLowerCase();
+      if (!s) {
+        if (e.success === false || e.reason || e.failed_reason) s = 'fail';
+        else if (e.lat > 1000) s = 'slow';
+        else s = 'ok';
+      }
+      
+      let statusTag = <span className="tag">{e.status?.toUpperCase() || 'OK'}</span>;
+      if (s === 'ok') statusTag = <span className="tag tag-green">OK</span>;
+      if (s === 'fail' || s === 'failed') statusTag = <span className="tag tag-red">FAILED</span>;
+      if (s === 'slow' || s === 'warn') statusTag = <span className="tag tag-yellow">SLOW</span>;
+
+      return { ...e, fmtDate, fmtTime, status: statusTag };
+    });
+
+    const MetricCard = ({ label, val, color }: { label: string; val: string | number; color?: string }) => (
+      <div style={{ flex: '1 1 0', minWidth: 100, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#fafafa', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{label}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: color || '#fafafa', lineHeight: 1 }}>{val}</div>
           </div>
-          <EventTable events={fails.slice(0, 10) as unknown as Record<string, unknown>[]} cols={FAIL_COLS} />
-          {fails.length > 10 ? <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>Showing 10 of {fails.length}.</p> : null}
         </div>
-      ) : <div className="dbg-section"><div className="dbg-empty">No failures for this source.</div></div>}
-    </>));
+      </div>
+    );
+
+    const customTitle = (
+      <div style={{ textAlign: 'left', lineHeight: 1.2 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '1px', marginBottom: 8, fontWeight: 400 }}>LOG VIEW</div>
+        <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 8 }}>RELIABILITY BY SOURCE</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{lbl.toUpperCase()}</div>
+      </div>
+    );
+
+    const customBody = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: 16, width: '100%', marginBottom: 24, flexWrap: 'wrap' }}>
+          <MetricCard label="Total Events" val={total.toLocaleString()} color="#fafafa" />
+          <MetricCard label="Success" val={success.toLocaleString()} color="var(--green)" />
+          <MetricCard label="Failures" val={fail.toLocaleString()} color={fail > 0 ? 'var(--red)' : '#fafafa'} />
+          <MetricCard label="Reliability" val={`${rel}%`} color={relColor(rel)} />
+        </div>
+        <hr style={{ width: '100%', border: 0, borderTop: '1px solid var(--border)', margin: '0 0 20px 0' }} />
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px', width: '100%', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>LOGS</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{sorted.length > 0 ? `Sampled ${Math.min(20, sorted.length)} logs` : 'No events for this source'}</div>
+            </div>
+            {sorted.length > 0 && <button className="card-btn-view" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.openLogCenter(lcOpts)}>VIEW</button>}
+          </div>
+          {sorted.length > 0 ? (
+            <EventTable events={rows} cols={[
+              { key: 'fmtDate', label: 'Date' }, { key: 'fmtTime', label: 'Time' },
+              { key: 'uc', label: 'Use Case' }, { key: 'dev', label: 'Device' },
+              { key: 'room', label: 'Room' }, { key: 'floor', label: 'Floor' }, 
+              { key: 'lat', label: 'Latency' }, { key: 'reason', label: 'Failed Reason' },
+              { key: 'status', label: 'State' },
+            ]} />
+          ) : (
+            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No Data</div>
+          )}
+        </div>
+      </div>
+    );
+
+    dash.showModal(customTitle, customBody);
   };
 
   const showDockModal = (dk: DockStats) => {
     const fail = dk.total - dk.success;
     const rel = dk.total ? +((100 * dk.success) / dk.total).toFixed(2) : 0;
-    dash.showModal(`Dock Reliability — ${dk.dock_id}`, (<>
-      <table style={{ fontSize: 12, marginBottom: 4 }}>
-        <tbody>
-          <KV label="Dock"><strong style={{ fontFamily: 'monospace' }}>{dk.dock_id}</strong></KV>
-          <KV label="Total Presses"><strong style={{ fontSize: 16 }}>{dk.total}</strong></KV>
-          <KV label="Successful"><strong style={{ color: 'var(--green)' }}>{dk.success}</strong></KV>
-          <KV label="Failed"><strong style={{ color: 'var(--red)', fontSize: 16 }}>{fail}</strong></KV>
-          <KV label="Reliability"><strong style={{ color: relColor(rel), fontSize: 16 }}>{rel}%</strong></KV>
-          <KV label="How it's measured">A press = a dock call_service tagged with this dock_id (ha_logs). Success = its context_id produced an on/off device state.</KV>
-        </tbody>
-      </table>
-      {dk.docklets && dk.docklets.length ? (
-        <div className="dbg-section">
-          <div className="dbg-section-hdr"><span className="dbg-section-title">Per-docklet breakdown</span></div>
-          <EventTable
-            events={dk.docklets.map((x) => ({
-              docklet: x.docklet_id, total: x.total, success: x.success,
-              fail: x.total - x.success, rel: `${x.total ? +((100 * x.success) / x.total).toFixed(1) : 0}%`,
-            }))}
-            cols={[
-              { key: 'docklet', label: 'Docklet' }, { key: 'total', label: 'Total' },
-              { key: 'success', label: 'OK' }, { key: 'fail', label: 'Fail' }, { key: 'rel', label: 'Reliability' },
-            ]} />
+
+    const MetricCard = ({ label, val, color }: { label: string; val: string | number; color?: string }) => (
+      <div style={{ flex: '1 1 0', minWidth: 100, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#fafafa', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{label}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: color || '#fafafa', lineHeight: 1 }}>{val}</div>
+          </div>
         </div>
-      ) : null}
-      <LcCta label="Inspect dock events in Log Center →"
-        onClick={() => dash.openLogCenter({ hub, tab: 'all', srcFilter: 'Dock Control', filters: { search: dk.dock_id }, context: { label: `Dock ${dk.dock_id}`, desc: `${hub.toUpperCase()} · ${dk.total} presses · ${rel}% reliable` } })} />
-    </>));
+      </div>
+    );
+
+    const customTitle = (
+      <div style={{ textAlign: 'left', lineHeight: 1.2 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '1px', marginBottom: 8, fontWeight: 400 }}>LOG VIEW</div>
+        <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 8 }}>DOCK RELIABILITY</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{dk.dock_id}</div>
+      </div>
+    );
+
+    const dockletsList = dk.docklets || [];
+
+    const customBody = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: 16, width: '100%', marginBottom: 24, flexWrap: 'wrap' }}>
+          <MetricCard label="TOTAL PRESSES" val={dk.total.toLocaleString()} color="#fafafa" />
+          <MetricCard label="SUCCESS" val={dk.success.toLocaleString()} color="var(--green)" />
+          <MetricCard label="FAILURES" val={fail.toLocaleString()} color={fail > 0 ? 'var(--red)' : '#fafafa'} />
+          <MetricCard label="RELIABILITY" val={`${rel}%`} color={relColor(rel)} />
+        </div>
+        <hr style={{ width: '100%', border: 0, borderTop: '1px solid var(--border)', margin: '0 0 20px 0' }} />
+        
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px', width: '100%', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>DOCKLET BREAKDOWN</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{dockletsList.length} Docklets</div>
+            </div>
+            <button className="card-btn-view" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.openLogCenter({ hub, tab: 'all', srcFilter: 'Dock Control', filters: { search: dk.dock_id }, context: { label: `DOCK RELIABILITY -> DEVICE: ${dk.dock_id}, EVENTS: ${dk.total}, FAILURES: ${fail}` } })}>VIEW DOCK EVENTS</button>
+          </div>
+          {dockletsList.length > 0 ? (
+            <EventTable
+              events={dockletsList.map((x) => {
+                const xfail = x.total - x.success;
+                const xrel = x.total ? +((100 * x.success) / x.total).toFixed(1) : 0;
+                const buildStateTag = (label: string, color: string) => (
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${color}`, borderRadius: 20, padding: '3px 10px', fontSize: 11, fontWeight: 500 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, display: 'inline-block' }} />
+                    <span style={{ color: color }}>{label}</span>
+                  </div>
+                );
+
+                let stateTag = buildStateTag('Critical', 'var(--red)');
+                if (xrel >= 97) stateTag = buildStateTag('Healthy', 'var(--green)');
+                else if (xrel >= 95) stateTag = buildStateTag('Warning', 'var(--yellow)');
+                
+                return {
+                  docklet: x.docklet_id,
+                  total: x.total,
+                  success: x.success,
+                  fail: xfail,
+                  relStr: <span style={{ color: relColor(xrel) }}>{xrel}%</span>,
+                  state: stateTag
+                };
+              })}
+              cols={[
+                { key: 'docklet', label: 'DOCKLET' }, 
+                { key: 'total', label: 'TOTAL PRESSES' },
+                { key: 'success', label: 'SUCCESS' }, 
+                { key: 'fail', label: 'FAILURES' }, 
+                { key: 'relStr', label: 'RELIABILITY' },
+                { key: 'state', label: 'STATE' }
+              ]} 
+            />
+          ) : (
+            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No Docklets Found</div>
+          )}
+        </div>
+      </div>
+    );
+
+    dash.showModal(customTitle, customBody);
   };
 
   const showDevModal = (dev: { id: string; room: string; total: number; rel: number; p50: number; failC: number; reasons: Record<string, number> }) => {
-    const fails = failuresFor(hub, d, (f) => f.dev === dev.id);
-    const reasonStr = Object.keys(dev.reasons).length
-      ? Object.entries(dev.reasons).map(([k, v]) => `${k}: ${v}`).join(' · ')
-      : '—';
-    dash.showModal(`Device — ${dev.id}`, (<>
-      <table style={{ fontSize: 12, marginBottom: 4 }}>
-        <tbody>
-          <KV label="Device"><strong style={{ fontFamily: 'monospace' }}>{dev.id}</strong></KV>
-          <KV label="Room">{dev.room || '—'}</KV>
-          <KV label="Total Commands"><strong style={{ fontSize: 16 }}>{dev.total}</strong></KV>
-          <KV label="Reliability"><strong style={{ color: relColor(dev.rel), fontSize: 16 }}>{dev.rel}%</strong></KV>
-          <KV label="Failures"><strong style={{ color: 'var(--red)', fontSize: 16 }}>{dev.failC}</strong></KV>
-          <KV label="Median (P50)">{dev.p50}ms</KV>
-          <KV label="Failure Reasons"><span style={{ fontSize: 11 }}>{reasonStr}</span></KV>
-        </tbody>
-      </table>
-      <div className="dbg-section">
-        <div className="dbg-section-hdr">
-          <span className="dbg-section-title">Failure Events ({fails.length} sampled)</span>
-          <button className="dbg-lc-link" onClick={() => dash.openLogCenter({ hub, tab: 'failures', filters: { search: (dev.id || '').split('.').pop() || '' }, context: { label: `Failures — ${dev.id}`, desc: `${hub.toUpperCase()} · ${dev.failC} of ${dev.total} commands failed` } })}>
-            Inspect in Log Center →
-          </button>
+    const rawEvents = failuresFor(hub, d, (f) => f.dev === dev.id);
+
+    const MetricCard = ({ label, val, color }: { label: string; val: string | number; color?: string }) => (
+      <div style={{ flex: '1 1 0', minWidth: 100, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#fafafa', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{label}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: color || '#fafafa', lineHeight: 1 }}>{val}</div>
+          </div>
         </div>
-        {fails.length
-          ? (<>
-              <EventTable events={fails.slice(0, 12) as unknown as Record<string, unknown>[]}
-                cols={[
-                  { key: 'ts', label: 'Time' }, { key: 'uc', label: 'Use Case' }, { key: 'room', label: 'Room' },
-                  { key: 'src', label: 'Source' }, { key: 'reason', label: 'Reason' }, { key: 'lat', label: 'Latency' },
-                ]} />
-              {fails.length > 12 ? <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>Showing 12 of {fails.length}.</p> : null}
-            </>)
-          : <div className="dbg-empty">No failure events in sample. Click "Inspect in Log Center →" to search all events for this device.</div>}
       </div>
-    </>));
+    );
+
+    const customTitle = (
+      <div style={{ textAlign: 'left', lineHeight: 1.2 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '1px', marginBottom: 8, fontWeight: 400 }}>LOG VIEW</div>
+        <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 8 }}>FAILURES BY DEVICE</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>{dev.id}</div>
+      </div>
+    );
+
+    const rows = rawEvents.slice(0, 20).map((e: any) => {
+      let fmtDate = '—', fmtTime = '—';
+      if (e.ts) {
+        const t = new Date(e.ts);
+        if (!isNaN(t.getTime())) {
+          const y = t.getFullYear().toString().substring(2);
+          const m = (t.getMonth() + 1).toString().padStart(2, '0');
+          const d_ = t.getDate().toString().padStart(2, '0');
+          fmtDate = `${d_}-${m}-${y}`;
+          fmtTime = t.toTimeString().split(' ')[0] || '—';
+        }
+      }
+      return { ...e, fmtDate, fmtTime };
+    });
+
+    const lcOpts = { hub, tab: 'failures' as const, filters: { search: (dev.id || '').split('.').pop() || '' }, context: { label: `FAILURES BY DEVICE -> DEVICE: ${dev.id}, EVENTS: ${dev.total}, FAILURES: ${dev.failC}` } };
+
+    const customBody = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: 16, width: '100%', marginBottom: 24, flexWrap: 'wrap' }}>
+          <MetricCard label="Total Events" val={dev.total.toLocaleString()} color="#fafafa" />
+          <MetricCard label="Failures" val={dev.failC.toLocaleString()} color={dev.failC > 0 ? 'var(--red)' : '#fafafa'} />
+          <MetricCard label="Reliability" val={`${dev.rel}%`} color={relColor(dev.rel)} />
+        </div>
+        <hr style={{ width: '100%', border: 0, borderTop: '1px solid var(--border)', margin: '0 0 20px 0' }} />
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px', width: '100%', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>LOGS</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Sampled {Math.min(20, rawEvents.length)} logs</div>
+            </div>
+            <button className="card-btn-view-red" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.openLogCenter(lcOpts)}>VIEW</button>
+          </div>
+          <EventTable events={rows} cols={[
+            { key: 'fmtDate', label: 'Date' }, { key: 'fmtTime', label: 'Time' },
+            { key: 'uc', label: 'Use Case' }, { key: 'room', label: 'Room' },
+            { key: 'floor', label: 'Floor' }, { key: 'lat', label: 'Latency' }, { key: 'reason', label: 'Failed Reason' }
+          ]} />
+        </div>
+      </div>
+    );
+
+    dash.showModal(customTitle, customBody);
   };
 
   const showReasonModal = (reason: string, count: number) => {
     const v = d.fail_by_reason?.[reason];
-    const remediation: Record<string, string> = {
-      TIMEOUT: 'Command reached hub but did not complete within time window. Check device firmware, SNAP responsiveness, and network congestion.',
-      NO_RESPONSE: 'Hub sent command but received no acknowledgement. Verify device is online and check Thread node connectivity.',
-      DEVICE_OFFLINE: 'Device was not reachable when command was issued. Check power state and Thread mesh coverage.',
-      THREAD_MESH_FAIL: 'Command failed at Thread mesh layer before reaching device. Check Thread border router and mesh node placement.',
-      DEVICE_UNAVAILABLE: 'The bound device never reached a concrete on/off state. Check power state and Thread mesh coverage.',
-    };
-    dash.showModal(`${reason} — Failure Analysis`, (<>
-      <table style={{ fontSize: 12, marginBottom: 4 }}>
-        <tbody>
-          <KV label="Failure Reason"><span className="tag tag-red">{reason}</span></KV>
-          <KV label="Occurrence Count"><strong style={{ fontSize: 18, color: 'var(--red)' }}>{count}</strong></KV>
-          <KV label="Diagnosis"><span style={{ fontSize: 11, lineHeight: 1.5 }}>{remediation[reason] || 'Unknown failure type.'}</span></KV>
-        </tbody>
-      </table>
-      {v?.events?.length ? (
-        <div className="dbg-section">
-          <div className="dbg-section-hdr">
-            <span className="dbg-section-title">Events with this failure ({v.events.length} samples)</span>
-            <button className="dbg-lc-link" onClick={() => dash.openLogCenter({ hub, tab: 'failures', filters: { reason }, context: { label: `${reason} Failures`, desc: `${count} events failed with this reason` } })}>
-              View all in Log Center →
-            </button>
+    const rawEvents = v?.events || [];
+    
+    const MetricCard = ({ label, val, color }: { label: string; val: string | number; color?: string }) => (
+      <div style={{ flex: '1 1 0', minWidth: 100, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#fafafa', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{label}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: color || '#fafafa', lineHeight: 1 }}>{val}</div>
           </div>
-          <EventTable events={v.events as unknown as Record<string, unknown>[]}
-            cols={[
-              { key: 'ts', label: 'Time' }, { key: 'dev', label: 'Device' }, { key: 'uc', label: 'Use Case' },
-              { key: 'room', label: 'Room' }, { key: 'src', label: 'Source' }, { key: 'lat', label: 'Latency' },
-            ]} />
         </div>
-      ) : null}
-    </>));
+      </div>
+    );
+
+    const customTitle = (
+      <div style={{ textAlign: 'left', lineHeight: 1.2 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '1px', marginBottom: 8, fontWeight: 400 }}>LOG VIEW</div>
+        <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 8 }}>FAILURES BY REASON</div>
+      </div>
+    );
+
+    const rows = rawEvents.slice(0, 20).map((e: any) => {
+      let fmtDate = '—', fmtTime = '—';
+      if (e.ts) {
+        const t = new Date(e.ts);
+        if (!isNaN(t.getTime())) {
+          const y = t.getFullYear().toString().substring(2);
+          const m = (t.getMonth() + 1).toString().padStart(2, '0');
+          const d_ = t.getDate().toString().padStart(2, '0');
+          fmtDate = `${d_}-${m}-${y}`;
+          fmtTime = t.toTimeString().split(' ')[0] || '—';
+        }
+      }
+      return { ...e, fmtDate, fmtTime };
+    });
+
+    const lcOpts = { hub, tab: 'failures' as const, filters: { reason }, context: { label: `FAILURES BY REASON -> REASON: ${reason}, FAILURES: ${count}` } };
+
+    const customBody = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: 16, width: '100%', marginBottom: 24, flexWrap: 'wrap' }}>
+          <MetricCard label="Reason" val={reason} color="#fafafa" />
+          <MetricCard label="Failures" val={count.toLocaleString()} color="var(--red)" />
+        </div>
+        <hr style={{ width: '100%', border: 0, borderTop: '1px solid var(--border)', margin: '0 0 20px 0' }} />
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px', width: '100%', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>LOGS</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Sampled {Math.min(20, rawEvents.length)} logs</div>
+            </div>
+            <button className="card-btn-view-red" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.openLogCenter(lcOpts)}>VIEW</button>
+          </div>
+          <EventTable events={rows} cols={[
+            { key: 'fmtDate', label: 'Date' }, { key: 'fmtTime', label: 'Time' },
+            { key: 'uc', label: 'Use Case' }, { key: 'dev', label: 'Device' },
+            { key: 'room', label: 'Room' }, { key: 'floor', label: 'Floor' }, { key: 'lat', label: 'Latency' }
+          ]} />
+        </div>
+      </div>
+    );
+
+    dash.showModal(customTitle, customBody);
+  };
+
+  const openTrendModal = (day: any) => {
+    const pool = buildEventPool(hub, d);
+    const dayEvents = pool.filter(e => e.ts && e.ts.startsWith(day.date));
+    const dayFails = dayEvents.filter(e => e.status === 'fail');
+    const lcOpts = { hub, tab: 'failures' as const, filters: { search: day.date }, context: { label: `RELIABILITY TREND -> DATE: ${day.date}, EVENTS: ${dayEvents.length}, FAILURES: ${day.fail || 0}` } };
+    
+    const rows = dayFails.slice(0, 20).map((e: any) => {
+      let fmtDate = '—', fmtTime = '—';
+      if (e.ts) {
+        const t = new Date(e.ts);
+        if (!isNaN(t.getTime())) {
+          const y = t.getFullYear().toString().substring(2);
+          const m = (t.getMonth() + 1).toString().padStart(2, '0');
+          const d_ = t.getDate().toString().padStart(2, '0');
+          fmtDate = `${d_}-${m}-${y}`;
+          fmtTime = t.toTimeString().split(' ')[0] || '—';
+        }
+      }
+      
+      let s = e.status?.toLowerCase() || 'ok';
+      let statusTag = <span className="tag">{s.toUpperCase()}</span>;
+      if (s === 'ok') statusTag = <span className="tag tag-green">OK</span>;
+      if (s === 'fail' || s === 'failed') statusTag = <span className="tag tag-red">FAILED</span>;
+      if (s === 'slow' || s === 'warn') statusTag = <span className="tag tag-yellow">SLOW</span>;
+
+      return { ...e, fmtDate, fmtTime, status: statusTag };
+    });
+
+    const MetricCard = ({ label, val, color }: { label: string; val: string | number; color?: string }) => (
+      <div style={{ flex: '1 1 0', minWidth: 100, background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#fafafa', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 8 }}>{label}</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: 26, fontWeight: 700, color: color || '#fafafa', lineHeight: 1 }}>{val}</div>
+          </div>
+        </div>
+      </div>
+    );
+
+    const customTitle = (
+      <div style={{ textAlign: 'left', lineHeight: 1.2 }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', letterSpacing: '1px', marginBottom: 8, fontWeight: 400 }}>LOG VIEW</div>
+        <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 8 }}>FAILURES TREND</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+          {day.date ? `${day.date.slice(8, 10)}-${day.date.slice(5, 7)}-${day.date.slice(2, 4)}` : day.date}
+        </div>
+      </div>
+    );
+
+    const customBody = (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: 16, width: '100%', marginBottom: 24, flexWrap: 'wrap' }}>
+          <MetricCard label="Total Events" val={day.total.toLocaleString()} color="#fafafa" />
+          <MetricCard label="Success" val={(day.total - day.fail).toLocaleString()} color="var(--green)" />
+          <MetricCard label="Failures" val={(day.fail || 0).toLocaleString()} color={(day.fail || 0) > 0 ? 'var(--red)' : '#fafafa'} />
+          <MetricCard label="Reliability" val={`${day.rel}%`} color={relColor(day.rel)} />
+        </div>
+        <hr style={{ width: '100%', border: 0, borderTop: '1px solid var(--border)', margin: '0 0 20px 0' }} />
+        <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px', width: '100%', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>LOGS</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Sampled {Math.min(20, dayFails.length)} logs</div>
+            </div>
+            <button className="card-btn-view" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.openLogCenter(lcOpts)}>VIEW</button>
+          </div>
+          <EventTable events={rows} cols={[
+            { key: 'fmtDate', label: 'Date' }, { key: 'fmtTime', label: 'Time' },
+            { key: 'uc', label: 'Use Case' }, { key: 'dev', label: 'Device' },
+            { key: 'room', label: 'Room' }, { key: 'floor', label: 'Floor' }, 
+            { key: 'lat', label: 'Latency' }, { key: 'reason', label: 'Failed Reason' },
+            { key: 'status', label: 'State' },
+          ]} />
+        </div>
+      </div>
+    );
+
+    dash.showModal(customTitle, customBody);
   };
 
   // ── Failures by reason (donut) ────────────────────────────────────────────
@@ -196,18 +477,18 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
     const isRed = rel < 97;
     const rc = isRed ? 'var(--red)' : rel === 100 ? 'var(--green)' : 'var(--yellow)';
     return (
-      <div key={title} className="clickable"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: isLast ? 'none' : '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}
+      <div key={title} className="hover-card-row"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', cursor: 'pointer', borderRadius: 10, borderBottom: isLast ? '1px solid transparent' : '1px solid var(--border)' }}
         onClick={() => showSrcRelModal(srcKey, total, total - fail, fail, rel)}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', letterSpacing: '0.5px', marginBottom: 4 }}>
-            {title} <span style={{ fontSize: 9, color: 'var(--blue)', fontWeight: 600 }}>Inspect →</span>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: '0.5px', marginBottom: 6 }}>
+            {title}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>{fail} Failed &nbsp;•&nbsp; {total} Total</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: rc, lineHeight: 1 }}>{rel}%</div>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>Target: &gt;=97%</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: rc, lineHeight: 1 }}>{rel}%</div>
+          <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>Target: &gt;=97%</div>
         </div>
       </div>
     );
@@ -218,7 +499,7 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
   );
 
   return (<>
-    <div className="grid-2" style={{ marginBottom: 16, alignItems: 'flex-start' }}>
+    <div className="grid-2" style={{ marginBottom: 16, alignItems: 'stretch' }}>
       <div className="panel" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
         <h3 style={{ flexShrink: 0 }}>RELIABILITY TREND<InfoButton k="rel_trend" /></h3>
         <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginBottom: 12, fontSize: 12, color: 'var(--text)', flexShrink: 0 }}>
@@ -226,7 +507,7 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
             <div style={{ width: 24, height: 2, background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <div style={{ width: 8, height: 8, background: '#10b981', borderRadius: '50%' }} />
             </div>
-            Reliability percentage
+            Reliability %
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 24, height: 2, borderBottom: '2px dashed rgba(228,228,231,.25)' }} />
@@ -238,7 +519,7 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
             data={{
               labels: dates,
               datasets: [
-                { label: 'Reliability percentage', data: daily.map((x) => x.rel), borderColor: '#10b981', tension: 0.3, pointRadius: 3, fill: true, backgroundColor: 'rgba(16,185,129,.06)' },
+                { label: 'Reliability %', data: daily.map((x) => x.rel), borderColor: '#10b981', tension: 0.3, pointRadius: 3, fill: true, backgroundColor: 'rgba(16,185,129,.06)' },
                 { label: 'Target %', data: dates.map(() => 97), borderColor: 'rgba(228,228,231,.25)', borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, fill: false, tension: 0 },
               ],
             }}
@@ -248,9 +529,20 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
                 if (!els.length) return;
                 const day = daily[els[0]!.index];
                 if (!day) return;
-                dash.openLogCenter({ hub, tab: 'failures', filters: { search: day.date }, context: { label: `Failures on ${day.date}`, desc: `${hub.toUpperCase()} · Reliability was ${day.rel}%` } });
+                openTrendModal(day);
               },
-              plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `Reliability %: ${ctx.parsed.y}` } } },
+              plugins: { 
+                legend: { display: false }, 
+                tooltip: { 
+                  usePointStyle: true,
+                  callbacks: { 
+                    labelPointStyle: (ctx) => {
+                      return { pointStyle: ctx.datasetIndex === 0 ? relIconCanvas : targetIconCanvas, rotation: 0 };
+                    },
+                    label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y}` 
+                  } 
+                } 
+              },
               scales: { y: { title: { display: true, text: 'Reliability %' }, min: 0, max: 102 }, x: { title: { display: true, text: 'Date' } } },
             }}
           />
@@ -267,7 +559,7 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
       </div>
     </div>
 
-    <div className="grid-2" style={{ marginBottom: 16, alignItems: 'flex-start' }}>
+    <div className="grid-2" style={{ marginBottom: 16, alignItems: 'stretch' }}>
       <div className="panel" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
         <h3 style={{ flexShrink: 0, textTransform: 'uppercase', display: 'flex', alignItems: 'center', position: 'relative' }}>
           DOCK RELIABILITY
@@ -277,16 +569,16 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
           </div>
         </h3>
         <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', marginTop: 12, maxHeight: 220, paddingRight: 8 }}>
-          <table>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
             <thead>
               <tr>
                 <th>Dock ID</th><th style={{ textAlign: 'center' }}>Presses</th><th style={{ textAlign: 'center' }}>Success</th>
-                <th style={{ textAlign: 'center' }}>Failures</th><th>Reliability</th><th>State</th><th>Action</th>
+                <th style={{ textAlign: 'center' }}>Failures</th><th>Reliability</th><th>State</th>
               </tr>
             </thead>
             <tbody>
               {sortedDocks.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 11, padding: 14 }}>No dock failures recorded</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 11, padding: 14 }}>No dock failures recorded</td></tr>
               )}
               {sortedDocks.map((dk) => {
                 const dkFail = dk.total - dk.success;
@@ -294,7 +586,7 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
                 const rc = relTag(rel) === 'tag-red' ? 'var(--red)' : relTag(rel) === 'tag-yellow' ? 'var(--yellow)' : 'var(--green)';
                 const stateText = rel < 93 ? 'Critical' : rel < 97 ? 'Warning' : 'Healthy';
                 return (
-                  <tr key={dk.dock_id} className="clickable" onClick={() => showDockModal(dk)}>
+                  <tr key={dk.dock_id} className="clickable hover-card-row" onClick={() => showDockModal(dk)}>
                     <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{dk.dock_id}</td>
                     <td style={{ textAlign: 'center', fontSize: 13 }}>{dk.total}</td>
                     <td style={{ textAlign: 'center', fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>{dk.success}</td>
@@ -305,7 +597,6 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
                         <span style={{ width: 7, height: 7, borderRadius: '50%', background: rc }} />{stateText}
                       </div>
                     </td>
-                    <td><button className="card-btn-view" style={{ padding: '4px 12px', fontSize: 11, whiteSpace: 'nowrap' }}>Inspect →</button></td>
                   </tr>
                 );
               })}
@@ -359,23 +650,23 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
         </div>
       </h3>
       <div className="custom-scrollbar" style={{ flex: 1, overflowY: 'auto', marginTop: 12, maxHeight: 300, paddingRight: 8 }}>
-        <table>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
           <thead>
             <tr>
               <th>Device</th><th style={{ textAlign: 'center' }}>Reliability</th><th style={{ textAlign: 'center' }}>Total Failures</th>
               <th style={{ textAlign: 'center' }}>No Response</th><th style={{ textAlign: 'center' }}>Timeout</th>
               <th style={{ textAlign: 'center' }}>Device Offline</th><th style={{ textAlign: 'center' }}>Device Unavailable</th>
-              <th style={{ textAlign: 'center' }}>Thread Mesh Fail</th><th>Action</th>
+              <th style={{ textAlign: 'center' }}>Thread Mesh Fail</th>
             </tr>
           </thead>
           <tbody>
             {sortedFailDev.length === 0 && (
-              <tr><td colSpan={9} style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: 14 }}>No device failures recorded</td></tr>
+              <tr><td colSpan={8} style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: 14 }}>No device failures recorded</td></tr>
             )}
             {sortedFailDev.map((dev) => {
               const rc = relTag(dev.rel) === 'tag-red' ? 'var(--red)' : relTag(dev.rel) === 'tag-yellow' ? 'var(--yellow)' : 'var(--green)';
               return (
-                <tr key={dev.id} className="clickable" onClick={() => showDevModal(dev)}>
+                <tr key={dev.id} className="clickable hover-card-row" onClick={() => showDevModal(dev)}>
                   <td style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text)', fontWeight: 600 }}>{devShort(dev.id)}</td>
                   <td style={{ color: rc, fontWeight: 700, fontSize: 13, textAlign: 'center' }}>{dev.rel}%</td>
                   <td style={{ textAlign: 'center', fontWeight: 700, color: 'var(--red)', fontSize: 13 }}>{dev.failC}</td>
@@ -384,7 +675,6 @@ export function ReliabilityTab({ hub, d }: { hub: string; d: HubDetail }) {
                   <td style={{ textAlign: 'center', fontSize: 13 }}>{dev.reasons['DEVICE_OFFLINE'] || 0}</td>
                   <td style={{ textAlign: 'center', fontSize: 13 }}>{dev.reasons['DEVICE_UNAVAILABLE'] || 0}</td>
                   <td style={{ textAlign: 'center', fontSize: 13 }}>{dev.reasons['THREAD_MESH_FAIL'] || 0}</td>
-                  <td><button className="card-btn-view" style={{ padding: '4px 12px', fontSize: 11, whiteSpace: 'nowrap' }}>Inspect →</button></td>
                 </tr>
               );
             })}

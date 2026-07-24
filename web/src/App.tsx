@@ -1,6 +1,6 @@
 /** App shell — header, nav bar with date-range picker, view routing, modal host. */
 import { useEffect, useState } from 'react';
-import { LayoutGrid, ScrollText, CalendarRange, LoaderCircle } from 'lucide-react';
+import { LayoutGrid, ScrollText, LoaderCircle } from 'lucide-react';
 import { DashboardProvider, useDash } from './state/DashboardContext';
 import { ModalHost } from './components/common';
 import { Landing } from './views/Landing';
@@ -33,11 +33,11 @@ function Shell() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-          <CalendarRange size={14} style={{ color: 'var(--muted)' }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.05em' }}>PERIOD</span>
           <input type="date" className="date-input" value={fromInput} onChange={(e) => setFromInput(e.target.value)} />
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>
           <input type="date" className="date-input" value={toInput} onChange={(e) => setToInput(e.target.value)} />
-          <button className="apply-btn" onClick={() => dash.applyRange(fromInput, toInput)}>Apply</button>
+          <button className="card-btn-view" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.applyRange(fromInput, toInput)}>Apply</button>
         </div>
       </div>
       <div className="nav-bar">

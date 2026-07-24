@@ -51,12 +51,12 @@ export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
 
       <div className="kpi-row" style={{ gridTemplateColumns: 'repeat(5,1fr)' }}>
         <div className="kpi" onClick={() => openLogCenter({ hub, tab: 'all', context: { label: `${hub.toUpperCase()} — All Activity`, desc: `All reliable events · ${dash.periodLabel()}` } })}>
-          <div className="label" style={titleStyle}>TOTAL EVENTS<InfoButton k="hub_total" /></div>
+          <div className="label" style={titleStyle}>TOTAL EVENTS<InfoButton k="hub_total" withHr /></div>
           <div className="value">{act.toLocaleString()}</div>
           <div className="sub">App {d.usage?.app || 0} · Dock {d.usage?.docklet || 0} · Hub {hubUse}</div>
         </div>
         <div className="kpi" onClick={showRel}>
-          <div className="label" style={titleStyle}>RELIABILITY<InfoButton k="hub_reliability" /></div>
+          <div className="label" style={titleStyle}>RELIABILITY<InfoButton k="hub_reliability" withHr /></div>
           <div className="value" style={{ color: act ? relColor(arel) : 'var(--muted)' }}>{act ? `${arel}%` : '—'}</div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
             <span className="sub" style={{ margin: 0 }}>
@@ -66,7 +66,7 @@ export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
           </div>
         </div>
         <div className="kpi" onClick={showSpeed}>
-          <div className="label" style={titleStyle}>P50 SPEED<InfoButton k="hub_latency" /></div>
+          <div className="label" style={titleStyle}>P50 SPEED<InfoButton k="hub_latency" withHr /></div>
           <div className="value" style={{ color: d.speed.local_e2e.p50 > 800 ? 'var(--yellow)' : '#fafafa' }}>
             {d.total && d.speed.local_e2e.p50 != null ? `${d.speed.local_e2e.p50}ms` : '—'}
           </div>
@@ -76,7 +76,7 @@ export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
           </div>
         </div>
         <div className="kpi" style={{ cursor: 'pointer' }} onClick={showNS}>
-          <div className="label" style={titleStyle}>NORTH STAR<InfoButton k="fleet_northstar" /></div>
+          <div className="label" style={titleStyle}>NORTH STAR<InfoButton k="fleet_northstar" withHr /></div>
           <div className="value" style={{ color: nsC }}>{nsAvg}%</div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
             <span className="sub" style={{ margin: 0 }}>Actions completed in &lt; 1 second</span>
@@ -84,7 +84,7 @@ export function HubDetail({ hub, tab }: { hub: string; tab: HubTabId }) {
           </div>
         </div>
         <div className="kpi" style={{ cursor: 'pointer' }} onClick={() => openLogCenter({ hub, tab: 'failures', context: { label: `${hub.toUpperCase()} — All Failures`, desc: `${f} failures · ${dash.periodLabel()}` } })}>
-          <div className="label" style={titleStyle}>FAILURES<InfoButton k="hub_failures" /></div>
+          <div className="label" style={titleStyle}>FAILURES<InfoButton k="hub_failures" withHr /></div>
           <div className="value" style={{ color: 'var(--red)' }}>{f}</div>
           <div className="sub" style={{ marginTop: 4 }}>App {appFails} · Dock {dockFails} · Hub {hubFails}</div>
         </div>

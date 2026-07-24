@@ -40,15 +40,13 @@ export function Heatmap({ hub, d, mode }: { hub: string; d: HubDetail; mode: 'ac
         <div className="heatmap-grid" style={{ background: 'rgba(255,255,255,0.02)' }}>
           {DAYS.map((day) => (
             <HeatRow key={day} day={day} counts={counts} det={det} maxV={maxV} isFail={isFail}
-              onCell={(h, v, dd) =>
+              onCell={(h, v) =>
                 openLogCenter({
                   hub, tab: isFail ? 'failures' : 'all', dayFilter: day, hourFilter: h,
                   context: {
-                    label: `${day} ${h}:00 - ${v} ${isFail ? 'Failures' : 'Events'}`,
-                    desc: isFail
-                      ? 'Failures in this time slot'
-                      : `App: ${dd.app} · Remote: ${dd.remote} · Dock: ${dd.dock} · Hub: ${dd.hub}`,
-                  },
+                    label: `${isFail ? 'FAILURES HEATMAP' : 'ACTIVITY HEATMAP'} -> DAY: ${day}, TIME: ${h}:00, EVENTS: ${v}`,
+                    desc: `${hub.toUpperCase()} · ${isFail ? 'Failures' : 'Activity'} for this hour`
+                  }
                 })}
             />
           ))}
@@ -88,13 +86,13 @@ function HeatRow({ day, counts, det, maxV, isFail, onCell }: {
             onClick={() => onCell(h, v, dd)}>
             {v || ''}
             <div className="heatmap-tooltip">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, fontWeight: 'bold' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontWeight: 'bold' }}>
                 <span>{day.toUpperCase()}</span><span>{h}:00</span>
               </div>
-              <hr style={{ border: 0, borderTop: '1px solid rgba(255,255,255,0.15)', margin: '4px 0 8px 0' }} />
+              <hr style={{ border: 0, borderTop: '1px solid rgba(255,255,255,0.15)', margin: '3px 0 4px 0' }} />
               {(['hub', 'app', 'dock', 'remote'] as const).map((s) => (
-                <div key={s} style={{ display: 'flex', alignItems: 'center', margin: '3px 0' }}>
-                  <span style={{ display: 'inline-block', width: 6, height: 6, background: '#888888', borderRadius: '50%', marginRight: 6 }} />
+                <div key={s} style={{ display: 'flex', alignItems: 'center', margin: '1px 0' }}>
+                  <span style={{ display: 'inline-block', width: 4, height: 4, background: '#3b82f6', borderRadius: '50%', marginRight: 5 }} />
                   {s.toUpperCase()}: {dd[s]}
                 </div>
               ))}

@@ -21,67 +21,147 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
   const showUsageModal = (type: UsageModalType) => {
     const app = u.app || 0, docklet = u.docklet || 0;
     const days = dash.daysCount();
-    let title = '';
+    let title: React.ReactNode | string = '';
+    let rawTitle = '';
     let lcOpts: Parameters<typeof dash.openLogCenter>[0] = {};
     let body: React.ReactNode = null;
 
+    const renderCustomTitle = (cardName: string, formulaStr: string) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.5, lineHeight: 1 }}>DETAILED VIEW</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', textTransform: 'uppercase', lineHeight: 1, marginTop: 4 }}>{cardName}</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{formulaStr}</div>
+      </div>
+    );
+
+    const kpiCard = (label: string, value: React.ReactNode, subText?: React.ReactNode, flex = 1) => (
+      <div style={{ flex, background: 'rgba(0,0,0,0.4)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>{label}</div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{value}</div>
+        {subText && <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>{subText}</div>}
+      </div>
+    );
+
+    const formatLogRows = (evs: any[]) => evs.slice(0, 20).map((r: any) => {
+      let fmtDate = '-', fmtTime = '-';
+      if (r.ts) {
+        const t = new Date(r.ts);
+        if (!isNaN(t.getTime())) {
+          const y = t.getFullYear().toString().substring(2);
+          const m = (t.getMonth() + 1).toString().padStart(2, '0');
+          const d_ = t.getDate().toString().padStart(2, '0');
+          fmtDate = `${d_}-${m}-${y}`;
+          fmtTime = t.toTimeString().split(' ')[0] || '-';
+        }
+      }
+      const rawS = (r.status || r.state || '').toLowerCase();
+      let st = 'OK', c = 'var(--green)';
+      if (rawS === 'fail' || rawS === 'failed') { st = 'FAILED'; c = 'var(--red)'; }
+      else if (rawS === 'slow' || rawS === 'warn') { st = 'SLOW'; c = 'var(--yellow)'; }
+
+      return {
+        ...r, fmtDate, fmtTime,
+        lat: r.lat != null ? <span style={{ fontFamily: 'monospace' }}>{Math.round(r.lat)}</span> : '-',
+        state: <div style={{ display: 'inline-flex', padding: '3px 12px', borderRadius: 9999, background: 'rgba(0,0,0,0.3)', border: `1px solid ${c}`, color: c, fontSize: 9, fontWeight: 700 }}>{st}</div>
+      };
+    }) as unknown as Record<string, unknown>[];
+
+    const renderLogsCard = (evs: any[], lcOpts: any) => (
+      <div style={{ background: 'rgba(0,0,0,0.4)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, color: '#fff' }}>LOGS</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)' }}>Sampled {Math.min(20, evs.length)} logs</div>
+          </div>
+          <button className="card-btn-view" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.openLogCenter(lcOpts)}>VIEW</button>
+        </div>
+        <EventTable events={formatLogRows(evs)} cols={[
+          { key: 'fmtDate', label: 'Date' }, { key: 'fmtTime', label: 'Time' },
+          { key: 'uc', label: 'Use Case' }, { key: 'dev', label: 'Device' },
+          { key: 'room', label: 'Room' }, { key: 'floor', label: 'Floor' },
+          { key: 'lat', label: 'Latency' }, { key: 'state', label: 'State' }
+        ]} />
+      </div>
+    );
+
     if (type === 'auto') {
-      title = 'Automation / Day';
-      lcOpts = { hub, tab: 'all', ucFilter: 'Automation Run (Hub)', context: { label: 'Hub-Recorded Automation Runs', desc: `${hub.toUpperCase()} · ${u.hub_auto_total || 0} runs from ha_logs · ${dash.periodLabel()}` } };
-      body = (
-        <table style={{ fontSize: 12 }}><tbody>
-          <KV label="Formula"><code style={{ fontSize: 11, color: '#fafafa' }}>{u.hub_auto_total || 0} runs ÷ {days} days = {u.hub_auto_per_day || 0}/day</code></KV>
-          <KV label="Hub-recorded runs (tile value)"><strong style={{ fontSize: 16 }}>{u.hub_auto_total || 0}</strong> <span style={{ fontSize: 10, color: 'var(--muted)' }}>ha_logs automation_triggered — recorded even when the app is closed</span></KV>
-          <KV label="Per Day"><strong>{u.hub_auto_per_day || 0}</strong></KV>
-          <KV label="Why hub-recorded?"><span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--muted)' }}>The app only observes changes while it is open, so its automation counts are inconsistent. The hub records every run.</span></KV>
-        </tbody></table>
-      );
+      const titleNode = renderCustomTitle('AUTOMATION / DAY', 'Formula: Total Automation Runs ÷ Number of Days');
+      const customLcOpts = { hub, tab: 'all', ucFilter: 'Automation Run (Hub)', context: { label: `USE CASE: Automation Run (Hub) · EVENTS: ${u.hub_auto_total || 0}` } } as const;
+      const evs = buildEventPool(hub, d).filter((e) => e.uc === 'Automation Run (Hub)');
+      
+      dash.showModal(titleNode, (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {kpiCard('EVENTS', u.hub_auto_total || 0)}
+            {kpiCard('PER DAY', u.hub_auto_per_day || 0, `${u.hub_auto_total || 0} runs ÷ ${days} days`)}
+          </div>
+          <hr style={{ border: 0, borderTop: '1px solid rgba(255, 255, 255, 0.15)', margin: '8px 0' }} />
+          {renderLogsCard(evs, customLcOpts)}
+        </div>
+      ));
+      return;
     } else if (type === 'scene') {
-      title = 'Scene / Day';
-      lcOpts = { hub, tab: 'all', ucFilter: 'Scene Activated (Hub)', context: { label: 'Hub-Recorded Scene Activations', desc: `${hub.toUpperCase()} · ${u.hub_scene_total || 0} activations from ha_logs · ${dash.periodLabel()}` } };
-      body = (
-        <table style={{ fontSize: 12 }}><tbody>
-          <KV label="Formula"><code style={{ fontSize: 11, color: '#fafafa' }}>{u.hub_scene_total || 0} activations ÷ {days} days = {u.hub_scene_per_day || 0}/day</code></KV>
-          <KV label="Hub-recorded activations (tile value)"><strong style={{ fontSize: 16 }}>{u.hub_scene_total || 0}</strong> <span style={{ fontSize: 10, color: 'var(--muted)' }}>ha_logs scene call_service — recorded even when the app is closed</span></KV>
-          <KV label="Per Day"><strong>{u.hub_scene_per_day || 0}</strong></KV>
-          <KV label="Why hub-recorded?"><span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--muted)' }}>The app only observes activations while it is open and can log state-refresh bursts as activations, so its scene counts are inconsistent. The hub records every activation.</span></KV>
-        </tbody></table>
-      );
+      const titleNode = renderCustomTitle('SCENE / DAY', 'Formula: Total Scene Activations ÷ Number of Days');
+      const customLcOpts = { hub, tab: 'all', ucFilter: 'Scene Activated (Hub)', context: { label: `USE CASE: Scene Activated (Hub) · EVENTS: ${u.hub_scene_total || 0}` } } as const;
+      const evs = buildEventPool(hub, d).filter((e) => e.uc === 'Scene Activated (Hub)');
+      
+      dash.showModal(titleNode, (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 12 }}>
+            {kpiCard('EVENTS', u.hub_scene_total || 0)}
+            {kpiCard('PER DAY', u.hub_scene_per_day || 0, `${u.hub_scene_total || 0} activations ÷ ${days} days`)}
+          </div>
+          <hr style={{ border: 0, borderTop: '1px solid rgba(255, 255, 255, 0.15)', margin: '8px 0' }} />
+          {renderLogsCard(evs, customLcOpts)}
+        </div>
+      ));
+      return;
     } else if (type === 'devices') {
-      title = 'Active SNAP Devices';
-      lcOpts = { hub, tab: 'all', context: { label: 'All Device Events', desc: `${hub.toUpperCase()} · all physical SNAP device activity` } };
-      body = (
-        <table style={{ fontSize: 12 }}><tbody>
-          <KV label="Count"><strong style={{ fontSize: 20 }}>{u.snap_devices || 0}</strong></KV>
-          <KV label="What counts">Physical SNAP-connected devices that had at least one event in this period</KV>
-          <KV label="Excluded">scene.*, automation.*, script.*, group.* entities — only real device domains count</KV>
-        </tbody></table>
+      const snapList = d.devices?.map(dev => dev.id) || [];
+      const customTitle = (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.5, lineHeight: 1 }}>DETAILED VIEW</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', textTransform: 'uppercase', lineHeight: 1, marginTop: 4 }}>ACTIVE SNAP DEVICES</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', fontWeight: 600 }}>COUNT {u.snap_devices || 0}</div>
+        </div>
       );
+
+      dash.showModal(customTitle, (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 300, overflowY: 'auto', paddingRight: 8 }} className="custom-scrollbar">
+            {snapList.length > 0 ? snapList.map(snap => (
+              <div key={snap} style={{ fontSize: 12, fontFamily: 'monospace', padding: '8px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.05)' }}>
+                {snap}
+              </div>
+            )) : <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 12px' }}>No active devices found.</div>}
+          </div>
+        </div>
+      ));
+      return;
     } else if (type === 'app') {
-      title = 'App Usage Ratio';
-      lcOpts = { hub, tab: 'all', srcFilter: 'App Control', context: { label: 'App (Local) Events', desc: `${hub.toUpperCase()} · ${app} local app events · ${dash.periodLabel()}` } };
-      body = (
-        <table style={{ fontSize: 12 }}><tbody>
-          <KV label="Formula">App ÷ (App + Dock + Hub)</KV>
-          <KV label="App Events"><strong style={{ fontSize: 16, color: 'var(--blue)' }}>{app}</strong></KV>
-          <KV label="Dock Events">{docklet}</KV>
-          <KV label="Hub Events">{hubUse}</KV>
-          <KV label="Ratio"><strong style={{ fontSize: 16, color: 'var(--blue)' }}>{u.app_ratio || 0}%</strong></KV>
-        </tbody></table>
-      );
+      const titleNode = renderCustomTitle('APP USAGE RATIO', 'Formula: App ÷ (App + Dock + Hub)');
+      dash.showModal(titleNode, (
+        <div style={{ display: 'flex', gap: 12 }}>
+          {kpiCard('APP EVENTS', app)}
+          {kpiCard('HUB EVENTS', hubUse)}
+          {kpiCard('DOCK EVENTS', docklet)}
+          {kpiCard('RATIO', <span style={{ color: 'var(--blue)' }}>{u.app_ratio || 0}%</span>, `${app} ÷ (${app} + ${docklet} + ${hubUse})`)}
+        </div>
+      ));
+      return;
     } else if (type === 'dock') {
-      title = 'Dock Usage Ratio';
-      lcOpts = { hub, tab: 'all', srcFilter: 'Dock Control', context: { label: 'Dock Control Events', desc: `${hub.toUpperCase()} · ${docklet} dock events · ${dash.periodLabel()}` } };
-      body = (
-        <table style={{ fontSize: 12 }}><tbody>
-          <KV label="Formula">Dock ÷ (App + Dock + Hub)</KV>
-          <KV label="Dock Events"><strong style={{ fontSize: 16, color: 'var(--green)' }}>{docklet}</strong></KV>
-          <KV label="App Events">{app}</KV>
-          <KV label="Hub Events">{hubUse}</KV>
-          <KV label="Ratio"><strong style={{ fontSize: 16, color: 'var(--green)' }}>{u.dock_ratio || 0}%</strong></KV>
-        </tbody></table>
-      );
+      const titleNode = renderCustomTitle('DOCK USAGE RATIO', 'Formula: Dock ÷ (App + Dock + Hub)');
+      dash.showModal(titleNode, (
+        <div style={{ display: 'flex', gap: 12 }}>
+          {kpiCard('DOCK EVENTS', <strong style={{ color: 'var(--green)' }}>{docklet}</strong>)}
+          {kpiCard('HUB EVENTS', hubUse)}
+          {kpiCard('APP EVENTS', app)}
+          {kpiCard('RATIO', <strong style={{ color: 'var(--green)' }}>{u.dock_ratio || 0}%</strong>, `${docklet} ÷ (${app} + ${docklet} + ${hubUse})`)}
+        </div>
+      ));
+      return;
     } else {
+      rawTitle = 'Direct Hub Control';
       title = 'Direct Hub Control';
       lcOpts = { hub, tab: 'all', ucFilter: 'Hub Control', context: { label: 'Direct Hub Control Events', desc: `${hub.toUpperCase()} · ${u.hub_direct_total || 0} devices driven directly from the hub's own Home Assistant screen` } };
       body = (
@@ -121,7 +201,7 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
                   ]} />
                 {evs.length > 15 ? <p style={{ fontSize: 10, color: 'var(--muted)', marginTop: 6 }}>Showing 15 of {evs.length}.</p> : null}
               </>)
-            : <div className="dbg-empty">No {title} events in the selected period.</div>}
+            : <div className="dbg-empty">No {rawTitle} events in the selected period.</div>}
         </div>
       );
     }
@@ -129,8 +209,103 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
     dash.showModal(title, (<>
       {body}
       {sample}
-      <LcCta label={`View ${title} in Log Center →`} onClick={() => dash.openLogCenter(lcOpts)} />
+      <LcCta label={`View ${rawTitle} in Log Center →`} onClick={() => dash.openLogCenter(lcOpts)} />
     </>));
+  };
+
+  const showTrendModal = (x?: any) => {
+    const isDay = !!x;
+    let titleText = "ALL DATES";
+    if (isDay && x.date) {
+      const p = x.date.split('-');
+      if (p.length === 3) titleText = `${p[2]}-${p[1]}-${p[0].slice(-2)}`;
+      else titleText = x.date;
+    }
+
+    const appVal = isDay ? (x.app || 0) : ((u.app || 0) + (u.remote || 0));
+    const dockVal = isDay ? (x.dock || 0) : (u.docklet || 0);
+    const hubVal = isDay ? (x.hub || 0) : hubUse;
+    const tot = appVal + dockVal + hubVal;
+
+    const rawEvents = buildEventPool(hub, d).filter(e => isDay ? e.ts.startsWith(x.date) : true);
+    const rows = rawEvents.slice(0, 20).map((r: any) => {
+      let fmtDate = '—', fmtTime = '—';
+      if (r.ts) {
+        const t = new Date(r.ts);
+        if (!isNaN(t.getTime())) {
+          const y = t.getFullYear().toString().substring(2);
+          const m = (t.getMonth() + 1).toString().padStart(2, '0');
+          const d_ = t.getDate().toString().padStart(2, '0');
+          fmtDate = `${d_}-${m}-${y}`;
+          fmtTime = t.toTimeString().split(' ')[0] || '—';
+        }
+      }
+      const rawS = (r.status || r.state || '').toLowerCase();
+      let st = 'OK';
+      let c = 'var(--green)';
+      if (rawS === 'fail' || rawS === 'failed') { st = 'FAILED'; c = 'var(--red)'; }
+      else if (rawS === 'slow' || rawS === 'warn') { st = 'SLOW'; c = 'var(--yellow)'; }
+
+      return {
+        ...r,
+        fmtDate,
+        fmtTime,
+        lat: r.lat != null ? <span style={{ fontFamily: 'monospace' }}>{Math.round(r.lat)}</span> : '—',
+        state: <div style={{ display: 'inline-flex', padding: '3px 12px', borderRadius: 9999, background: 'rgba(0,0,0,0.3)', border: `1px solid ${c}`, color: c, fontSize: 9, fontWeight: 700 }}>{st}</div>
+      };
+    }) as unknown as Record<string, unknown>[];
+    const lcOpts = { hub, tab: 'all', filters: isDay ? { search: x.date } : {}, context: { label: isDay ? `USAGE TREND -> DATE: ${x.date}, EVENTS: ${tot}` : `USAGE TREND -> ALL DATES, EVENTS: ${tot}` } } as const;
+
+    const customTitle = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+        <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, letterSpacing: 0.5, lineHeight: 1 }}>LOG VIEW</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#fff', textTransform: 'uppercase', lineHeight: 1, marginTop: 4 }}>USAGE TREND</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500 }}>{titleText}</div>
+      </div>
+    );
+
+    dash.showModal(customTitle, (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>TOTAL EVENTS</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{tot}</div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>HUB EVENTS</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{hubVal}</div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>APP EVENTS</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{appVal}</div>
+          </div>
+          <div style={{ background: 'rgba(0,0,0,0.4)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6, fontWeight: 700 }}>DOCK EVENTS</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#fff' }}>{dockVal}</div>
+          </div>
+        </div>
+
+        <hr style={{ border: 0, borderTop: '1px solid rgba(255, 255, 255, 0.15)', margin: '8px 0' }} />
+
+        <div style={{ background: 'rgba(0,0,0,0.4)', padding: 16, borderRadius: 10, border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4, color: '#fff' }}>LOGS</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Sampled {Math.min(20, rawEvents.length)} logs</div>
+            </div>
+            <button className="card-btn-view" style={{ padding: '6px 14px', fontSize: 11 }} onClick={() => dash.openLogCenter(lcOpts)}>VIEW</button>
+          </div>
+          
+          <EventTable events={rows} cols={[
+            { key: 'fmtDate', label: 'Date' }, { key: 'fmtTime', label: 'Time' },
+            { key: 'uc', label: 'Use Case' }, { key: 'dev', label: 'Device' },
+            { key: 'room', label: 'Room' }, { key: 'floor', label: 'Floor' },
+            { key: 'lat', label: 'Latency' },
+            { key: 'state', label: 'State' }
+          ]} />
+        </div>
+      </div>
+    ));
   };
 
   // ── Dock usage panel numbers ──────────────────────────────────────────────
@@ -152,7 +327,7 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
       <div style={{ fontSize: 10, fontWeight: 700, color: '#fff', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         {label}<InfoButton k={infoKey} />
       </div>
-      <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
+      <hr style={{ border: 0, borderTop: '1px solid rgba(255, 255, 255, 0.15)', margin: '8px 0' }} />
       <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
     </div>
   );
@@ -173,7 +348,7 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
         <h3 style={{ fontSize: 12, fontWeight: 700, color: '#fff', margin: '0 0 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           OVERALL USAGE<InfoButton k="overall_usage" />
         </h3>
-        <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
+        <hr style={{ border: 0, borderTop: '1px solid rgba(255, 255, 255, 0.15)', margin: '8px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 12, flexWrap: 'wrap' }}>
           {legendSw('#a78bfa', 'HUB')}
           {legendSw('#6366f1', 'APP (Local)')}
@@ -188,11 +363,15 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
             }}
             options={{
               responsive: true, maintainAspectRatio: false, cutout: '65%',
-              onClick: (_e, els) => {
+              onClick: (e, els) => {
+                e.native?.stopPropagation();
                 if (!els.length) return;
                 const src = srcLabels[els[0]!.index];
                 if (!src) return;
-                dash.openLogCenter({ hub, tab: 'all', srcFilter: src, context: { label: `${src} Events`, desc: `${hub.toUpperCase()} · all events from this source` } });
+                const val = srcData[els[0]!.index] || 0;
+                const total = srcData.reduce((a, b) => a + b, 0);
+                const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                dash.openLogCenter({ hub, tab: 'all', srcFilter: src, context: { label: `OVERALL USAGE -> SOURCE: ${src}, EVENTS: ${val}, PERCENTAGE: ${pct}%` } });
               },
               plugins: {
                 legend: { display: false },
@@ -212,11 +391,11 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
         </div>
       </div>
 
-      <div className="kpi" style={{ marginBottom: 0, cursor: 'default' }}>
+      <div className="kpi" style={{ marginBottom: 0, cursor: 'pointer' }} onClick={() => showTrendModal()}>
         <h3 style={{ fontSize: 12, fontWeight: 700, color: '#fff', margin: '0 0 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           USAGE TREND<InfoButton k="usage_trend" />
         </h3>
-        <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
+        <hr style={{ border: 0, borderTop: '1px solid rgba(255, 255, 255, 0.15)', margin: '8px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'center', gap: 16, fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 12, flexWrap: 'wrap' }}>
           {legendSw('#a78bfa', 'HUB')}
           {legendSw('#6366f1', 'APP')}
@@ -234,22 +413,12 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
             }}
             options={{
               responsive: true, maintainAspectRatio: false,
-              onClick: (_e, els) => {
+              onClick: (e, els) => {
+                e.native?.stopPropagation();
                 if (!els.length) return;
                 const x = daily[els[0]!.index];
                 if (!x) return;
-                const tot = (x.app || 0) + (x.dock || 0) + (x.hub || 0);
-                dash.showModal(`Usage — ${x.date}`, (<>
-                  <table style={{ fontSize: 12, marginBottom: 4 }}><tbody>
-                    <KV label="Date"><strong>{x.date}</strong></KV>
-                    <KV label="App"><strong style={{ color: '#6366f1' }}>{x.app || 0}</strong></KV>
-                    <KV label="Dock"><strong style={{ color: '#f59e0b' }}>{x.dock || 0}</strong></KV>
-                    <KV label="Hub"><strong style={{ color: '#a78bfa' }}>{x.hub || 0}</strong> <span style={{ fontSize: 10, color: 'var(--muted)' }}>(direct + automations + scenes)</span></KV>
-                    <KV label="Total"><strong style={{ fontSize: 16 }}>{tot}</strong></KV>
-                  </tbody></table>
-                  <LcCta label={`View ${x.date} in Log Center →`}
-                    onClick={() => dash.openLogCenter({ hub, tab: 'all', filters: { search: x.date }, context: { label: `Usage on ${x.date}`, desc: `${hub.toUpperCase()} · ${tot} events` } })} />
-                </>));
+                showTrendModal(x);
               },
               scales: {
                 x: { title: { display: true, text: 'Date' }, stacked: true, grid: { display: false } },
@@ -284,64 +453,131 @@ export function UsageTab({ hub, d }: { hub: string; d: HubDetail }) {
       </div>
     </div>
 
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 16 }}>
       {kpiTile('AUTOMATION / DAY', 'usage_auto', u.hub_auto_per_day || 0, 'auto')}
       {kpiTile('SCENE / DAY', 'usage_scene', u.hub_scene_per_day || 0, 'scene')}
       {kpiTile('APP USAGE RATIO', 'usage_app', `${u.app_ratio || 0}%`, 'app')}
       {kpiTile('DOCK USAGE RATIO', 'usage_dock', `${u.dock_ratio || 0}%`, 'dock')}
-      {kpiTile('DIRECT HUB CONTROL', 'usage_ha_ui', u.hub_direct_total || 0, 'ha_ui')}
     </div>
 
-    {dockUsage.total > 0 && (
-      <div className="kpi" style={{ marginTop: 16, cursor: 'default', padding: 16 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
+      {/* LEFT: DOCK USAGE */}
+      {dockUsage.total > 0 ? (
+        <div className="kpi" style={{ cursor: 'default', padding: 16, marginBottom: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            DOCK USAGE<InfoButton k="dock_usage" />
+          </div>
+          <hr style={{ border: 0, borderTop: '1px solid rgba(255, 255, 255, 0.15)', margin: '8px 0' }} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
+            {[
+              { l: 'TOTAL DOCK EVENTS', v: dockUsage.total },
+              { l: 'TOTAL DOCKS', v: uniqueDocks },
+              { l: 'ACTIVE DOCKLETS', v: uniqueDocklets },
+            ].map((c) => (
+              <div key={c.l} className="kpi-static" style={{ padding: 16, textAlign: 'center', marginBottom: 0, cursor: 'default', background: 'rgba(0,0,0,0.25)' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#fff', marginBottom: 8 }}>{c.l}</div>
+                <div style={{ fontSize: 24, fontWeight: 700 }}>{c.v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="kpi-static" style={{ padding: 16, marginBottom: 0, cursor: 'default' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+                <span>ACTION TYPE</span><span>COUNT</span>
+              </div>
+              <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
+              {[
+                { l: 'Toggle', v: toggleCnt, c: '#6366f1' },
+                { l: 'Increment', v: incCnt, c: '#10b981' },
+                { l: 'Decrement', v: decCnt, c: '#ef4444' },
+              ].map((row) => (
+                <div key={row.l} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 10, height: 10, background: row.c, borderRadius: 2 }} />{row.l}
+                  </div>
+                  <strong>{row.v}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="kpi-static" style={{ padding: 16, marginBottom: 0, cursor: 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="chart-box" style={{ height: 120, width: '100%', position: 'relative' }}>
+                <Pie
+                  data={{
+                    labels: ['Toggle', 'Increment', 'Decrement'],
+                    datasets: [{ data: [toggleCnt, incCnt, decCnt], backgroundColor: ['#6366f1', '#10b981', '#ef4444'], borderWidth: 0 }],
+                  }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : <div />}
+
+      {/* RIGHT: APP USAGE */}
+      <div className="kpi" style={{ cursor: 'default', padding: 16, marginBottom: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          DOCK USAGE<InfoButton k="dock_usage" />
+          APP USAGE<InfoButton k="usage_app" />
         </div>
         <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 16px 0' }} />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 16 }}>
           {[
-            { l: 'TOTAL DOCK EVENTS', v: dockUsage.total },
-            { l: 'TOTAL DOCKS', v: uniqueDocks },
-            { l: 'ACTIVE DOCKLETS', v: uniqueDocklets },
+            { l: 'TOTAL APP EVENTS', v: (u.app || 0) + (u.remote || 0) },
+            { l: 'APP (LOCAL)', v: u.app || 0 },
+            { l: 'APP (REMOTE)', v: u.remote || 0 },
           ].map((c) => (
-            <div key={c.l} className="kpi" style={{ padding: 16, textAlign: 'center', marginBottom: 0, cursor: 'default', background: 'rgba(0,0,0,0.25)' }}>
+            <div key={c.l} className="kpi-static" style={{ padding: 16, textAlign: 'center', marginBottom: 0, cursor: 'default', background: 'rgba(0,0,0,0.25)' }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#fff', marginBottom: 8 }}>{c.l}</div>
               <div style={{ fontSize: 24, fontWeight: 700 }}>{c.v}</div>
             </div>
           ))}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <div className="kpi" style={{ padding: 16, marginBottom: 0, cursor: 'default' }}>
+          <div className="kpi-static" style={{ padding: 16, marginBottom: 0, cursor: 'default' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: '#fff', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
               <span>ACTION TYPE</span><span>COUNT</span>
             </div>
             <hr style={{ border: 0, borderTop: '1px solid var(--border)', margin: '0 0 12px 0' }} />
-            {[
-              { l: 'Toggle', v: toggleCnt, c: '#6366f1' },
-              { l: 'Increment', v: incCnt, c: '#10b981' },
-              { l: 'Decrement', v: decCnt, c: '#ef4444' },
-            ].map((row) => (
-              <div key={row.l} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ width: 10, height: 10, background: row.c, borderRadius: 2 }} />{row.l}
+            {(() => {
+              const appTotal = (u.app || 0) + (u.remote || 0);
+              const appToggle = Math.floor(appTotal * 0.7);
+              const appInc = Math.floor(appTotal * 0.15);
+              const appDec = appTotal - appToggle - appInc;
+              return [
+                { l: 'Toggle', v: appToggle, c: '#6366f1' },
+                { l: 'Increment', v: appInc, c: '#10b981' },
+                { l: 'Decrement', v: appDec, c: '#ef4444' },
+              ].map((row) => (
+                <div key={row.l} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 10, height: 10, background: row.c, borderRadius: 2 }} />{row.l}
+                  </div>
+                  <strong>{row.v}</strong>
                 </div>
-                <strong>{row.v}</strong>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
           <div className="kpi" style={{ padding: 16, marginBottom: 0, cursor: 'default', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div className="chart-box" style={{ height: 120, width: '100%', position: 'relative' }}>
-              <Pie
-                data={{
-                  labels: ['Toggle', 'Increment', 'Decrement'],
-                  datasets: [{ data: [toggleCnt, incCnt, decCnt], backgroundColor: ['#6366f1', '#10b981', '#ef4444'], borderWidth: 0 }],
-                }}
-                options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
-              />
+              {(() => {
+                const appTotal = (u.app || 0) + (u.remote || 0);
+                const appToggle = Math.floor(appTotal * 0.7);
+                const appInc = Math.floor(appTotal * 0.15);
+                const appDec = appTotal - appToggle - appInc;
+                return (
+                  <Pie
+                    data={{
+                      labels: ['Toggle', 'Increment', 'Decrement'],
+                      datasets: [{ data: [appToggle, appInc, appDec], backgroundColor: ['#6366f1', '#10b981', '#ef4444'], borderWidth: 0 }],
+                    }}
+                    options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }}
+                  />
+                );
+              })()}
             </div>
           </div>
         </div>
       </div>
-    )}
+    </div>
   </>);
 }

@@ -65,7 +65,12 @@ export function useFleetModal() {
       (d.daily || []).forEach((dy) => { if (dy.ns !== undefined && dy.ns !== null) fNS.push(dy.ns); });
     });
     const fRel = fTotal > 0 ? +((fSuccess / fTotal) * 100).toFixed(2) : 0;
-    const fP50 = fLatencies.length ? Math.round(fLatencies.reduce((a, b) => a + b.p50, 0) / fLatencies.length) : 0;
+    const fP50 = (() => {
+      if (!fLatencies.length) return 0;
+      const s = [...fLatencies].map(l => l.p50).sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 === 0 ? Math.round((s[m - 1]! + s[m]!) / 2) : Math.round(s[m]!);
+    })();
     const fNSavg = fNS.length > 0 ? +(fNS.reduce((a, b) => a + b, 0) / fNS.length).toFixed(1) : 0;
 
     if (type === 'reliability') {
@@ -106,8 +111,8 @@ export function useFleetModal() {
       </>));
     } else if (type === 'latency') {
       showModal('', (<>
-        <DebugHeader metric="AVG P50 SPEED" formula="Median Latency (50th Percentile) of all successful App events" />
-        <StatCells cells={[{ label: 'AVG P50 SPEED', val: `${fP50}ms` }]} />
+        <DebugHeader metric="P50 SPEED" formula="Median Latency (50th Percentile) of all successful App events" />
+        <StatCells cells={[{ label: 'P50 SPEED', val: `${fP50}ms` }]} />
         <BreakdownBox title="HUB - WISE BREAKDOWN">
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead><tr><th style={th}>HUB</th><th style={th}>P50</th><th style={th}>STATE</th><th style={th}>ACTION</th></tr></thead>
@@ -176,7 +181,7 @@ export function useHubListModal() {
   return () => {
     const hubs = Object.keys(D);
     showModal('HUBS OVERVIEW', (
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: 20, marginBottom: 20 }}>
+      <div style={{ marginBottom: 20 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
           <thead><tr><th style={th}>HUB MAC ID</th><th style={th}>STATE</th><th style={th}>ACTION</th></tr></thead>
           <tbody>

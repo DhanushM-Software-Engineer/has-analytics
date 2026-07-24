@@ -33,7 +33,12 @@ export function Landing() {
       (d.daily || []).forEach((dy) => { if (dy.ns != null) fNS.push(dy.ns); });
     });
     const fRel = fActivity > 0 ? +((fActSucc / fActivity) * 100).toFixed(2) : 0;
-    const fP50 = fLatencies.length > 0 ? Math.round(fLatencies.reduce((a, b) => a + b, 0) / fLatencies.length) : 0;
+    const fP50 = (() => {
+      if (!fLatencies.length) return 0;
+      const s = [...fLatencies].sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 === 0 ? Math.round((s[m - 1]! + s[m]!) / 2) : Math.round(s[m]!);
+    })();
     const fNSavg = fNS.length > 0 ? +(fNS.reduce((a, b) => a + b, 0) / fNS.length).toFixed(1) : 0;
     return { fActivity, fActSucc, fActFail, fRel, fP50, fNSavg };
   }, [D, hubs]);
@@ -81,12 +86,12 @@ export function Landing() {
 
       <div className="kpi-row">
         <div className="kpi">
-          <div className="label" style={titleStyle}>TOTAL EVENTS<InfoButton k="fleet_total" /></div>
+          <div className="label" style={titleStyle}>TOTAL EVENTS<InfoButton k="fleet_total" withHr /></div>
           <div className="value">{fleet.fActivity.toLocaleString()}</div>
           <div className="sub">{hubs.length} Hubs</div>
         </div>
         <div className="kpi" onClick={() => showFleetModal('reliability')}>
-          <div className="label" style={titleStyle}>RELIABILITY<InfoButton k="fleet_reliability" /></div>
+          <div className="label" style={titleStyle}>RELIABILITY<InfoButton k="fleet_reliability" withHr /></div>
           <div className="value" style={{ color: fleet.fActivity ? relColor(fleet.fRel) : 'var(--muted)' }}>
             {fleet.fActivity ? `${fleet.fRel}%` : '—'}
           </div>
@@ -98,7 +103,7 @@ export function Landing() {
           </div>
         </div>
         <div className="kpi" onClick={() => showFleetModal('latency')}>
-          <div className="label" style={titleStyle}>AVG P50 SPEED<InfoButton k="fleet_latency" /></div>
+          <div className="label" style={titleStyle}>P50 SPEED<InfoButton k="fleet_latency" withHr /></div>
           <div className="value">{fleet.fP50}ms</div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
             <span className="sub" style={{ margin: 0 }}>Median Response Time</span>
@@ -106,7 +111,7 @@ export function Landing() {
           </div>
         </div>
         <div className="kpi" onClick={() => showFleetModal('northstar')}>
-          <div className="label" style={titleStyle}>NORTH STAR<InfoButton k="fleet_northstar" /></div>
+          <div className="label" style={titleStyle}>NORTH STAR<InfoButton k="fleet_northstar" withHr /></div>
           <div className="value" style={{ color: fleet.fNSavg >= 95 ? 'var(--green)' : fleet.fNSavg >= 80 ? 'var(--yellow)' : 'var(--red)' }}>
             {fleet.fNSavg}%
           </div>

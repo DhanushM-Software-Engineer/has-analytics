@@ -19,7 +19,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 @app.on_event("startup")
 async def startup_event():
     print("\n" + "="*50)
-    print("🚀 Analytics Dashboard running at: http://localhost:8080")
+    print("Analytics Dashboard running at: http://localhost:8080")
     print("="*50 + "\n")
 
 PROJECT = "schnell-home-automation"
@@ -289,17 +289,27 @@ def hub_detail(hub_id: str,
               AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
             GROUP BY bucket ORDER BY MIN(latency_ms)""", p)
         f_bk       = ex.submit(q, f"""
-            SELECT CASE WHEN latency_ms<500  THEN '<500ms'
-                        WHEN latency_ms<1000 THEN '500-1000ms'
-                        WHEN latency_ms<2000 THEN '1-2s'
-                        WHEN latency_ms<5000 THEN '2-5s'
-                        ELSE '>5s' END AS bucket,
-                   event_timestamp AS ts, entity_id AS dev, friendly_name,
-                   use_case AS uc, latency_ms AS lat, trigger_method AS src,
-                   room, success
-            FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL AND {APP_UC}
-              AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
-            LIMIT 500""", p)
+            WITH ranked AS (
+                SELECT CASE WHEN latency_ms<500  THEN '<500ms'
+                            WHEN latency_ms<1000 THEN '500-1000ms'
+                            WHEN latency_ms<2000 THEN '1-2s'
+                            WHEN latency_ms<5000 THEN '2-5s'
+                            ELSE '>5s' END AS bucket,
+                       event_timestamp AS ts, entity_id AS dev, friendly_name,
+                       use_case AS uc, latency_ms AS lat, trigger_method AS src,
+                       room, success,
+                       ROW_NUMBER() OVER(
+                           PARTITION BY CASE WHEN latency_ms<500  THEN '<500ms'
+                                             WHEN latency_ms<1000 THEN '500-1000ms'
+                                             WHEN latency_ms<2000 THEN '1-2s'
+                                             WHEN latency_ms<5000 THEN '2-5s'
+                                             ELSE '>5s' END
+                           ORDER BY event_timestamp DESC
+                       ) as rn
+                FROM {AL} WHERE hub_id=@hub_id AND latency_ms IS NOT NULL AND {APP_UC}
+                  AND DATE(event_timestamp) BETWEEN @from_date AND @to_date
+            )
+            SELECT * EXCEPT(rn) FROM ranked WHERE rn <= 20""", p)
         f_daily    = ex.submit(q, f"""
             SELECT date, COUNT(*) AS total,
                    ROUND(100*COUNTIF(success)/COUNT(*),2) AS rel,
@@ -691,13 +701,14 @@ def hub_detail(hub_id: str,
     # Hub = direct HA-UI control + automation runs + scene activations. The three
     # ratios sum to 100%.
     hub_usage_total = hub_scene_cnt + hub_auto_cnt + ha_ui_cnt
-    u_total     = app_cnt + dock_cnt + hub_usage_total
+    app_usage_total = app_cnt + remote_cnt
+    u_total     = app_usage_total + dock_cnt + hub_usage_total
     snap_device_cnt = int((f_snap_count.result() or [{}])[0].get("cnt", 0) or 0)
     usage = {
-        "app": app_cnt, "remote": remote_cnt,
+        "app": app_usage_total, "remote": remote_cnt,
         "docklet": dock_cnt,                # dock device activations (ha_logs)
         "direct": obs_cnt,                  # observed — INTERNAL reference only
-        "app_ratio":  round(100 * app_cnt  / u_total, 2) if u_total else 0,
+        "app_ratio":  round(100 * app_usage_total / u_total, 2) if u_total else 0,
         "dock_ratio": round(100 * dock_cnt / u_total, 2) if u_total else 0,
         "hub_ratio":  round(100 * hub_usage_total / u_total, 2) if u_total else 0,
         "snap_devices":   snap_device_cnt,
